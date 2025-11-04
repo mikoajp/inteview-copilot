@@ -17,6 +17,10 @@ class Config:
 
     cors_origins: str = os.getenv("CORS_ORIGINS", "*")
 
+    # Database Configuration
+    database_url: str = os.getenv("DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/interview_copilot")
+    use_database: bool = os.getenv("USE_DATABASE", "False").lower() == "true"
+
     def validate(self) -> bool:
         ok = True
         if not self.gemini_api_key:

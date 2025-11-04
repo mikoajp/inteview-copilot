@@ -5,3 +5,7 @@ openai-whisper
 numpy
 pydantic
 python-dotenv
+sqlalchemy
+psycopg2-binary
+alembic
+asyncpg

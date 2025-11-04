@@ -4,6 +4,7 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Optional, Dict, Any
+from sqlalchemy.orm import Session
 import asyncio
 import numpy as np
 import base64
@@ -16,6 +17,16 @@ from core.transcription import TranscriptionEngine
 from core.question_detector import QuestionDetector
 from core.context_manager import ContextManager
 from models import Context, HistoryEntry
+
+# Database imports (conditional)
+if config.use_database:
+    from database import get_db, init_db, check_db_connection
+    from db_operations import (
+        get_context as get_context_db,
+        update_context as update_context_db,
+        add_history_entry,
+        get_history as get_history_db
+    )
 
 # Initialize FastAPI app
 app = FastAPI(
@@ -243,9 +254,19 @@ async def process_audio(request: ProcessAudioRequest):
         if is_question:
             print("❓ Question detected!")
             
-            # Get context from session (in production, use database)
+            # Get context from session
             session_id = "default"  # In production, get from auth
-            context_data = contexts.get(session_id, Context())
+
+            if config.use_database:
+                # Note: We can't use Depends in this context, need to handle manually
+                from database import SessionLocal
+                db = SessionLocal()
+                try:
+                    context_data = get_context_db(db, session_id)
+                finally:
+                    db.close()
+            else:
+                context_data = contexts.get(session_id, Context())
             
             # Build system prompt
             system_prompt = context_manager.build_system_prompt(
@@ -266,14 +287,22 @@ async def process_audio(request: ProcessAudioRequest):
                 print(f"💡 Answer generated: {answer[:100]}...")
                 
                 # Save to history
-                if session_id not in history:
-                    history[session_id] = []
-                
-                history[session_id].append({
-                    "question": text,
-                    "answer": answer,
-                    "timestamp": datetime.utcnow().isoformat()
-                })
+                if config.use_database:
+                    from database import SessionLocal
+                    db = SessionLocal()
+                    try:
+                        add_history_entry(db, session_id, text, answer)
+                    finally:
+                        db.close()
+                else:
+                    if session_id not in history:
+                        history[session_id] = []
+
+                    history[session_id].append({
+                        "question": text,
+                        "answer": answer,
+                        "timestamp": datetime.utcnow().isoformat()
+                    })
                 
                 return ProcessAudioResponse(
                     success=True,
@@ -302,11 +331,15 @@ async def process_audio(request: ProcessAudioRequest):
 
 
 @app.get("/api/context", response_model=ContextResponse)
-async def get_context():
+async def get_context(db: Session = Depends(get_db) if config.use_database else None):
     """Get interview context."""
     session_id = "default"  # In production, get from auth
-    context_data = contexts.get(session_id, Context())
-    
+
+    if config.use_database and db:
+        context_data = get_context_db(db, session_id)
+    else:
+        context_data = contexts.get(session_id, Context())
+
     return ContextResponse(
         cv=context_data.cv,
         company=context_data.company,
@@ -315,29 +348,37 @@ async def get_context():
 
 
 @app.post("/api/context", response_model=dict)
-async def update_context(request: ContextRequest):
+async def update_context(request: ContextRequest, db: Session = Depends(get_db) if config.use_database else None):
     """Update interview context."""
     session_id = "default"  # In production, get from auth
-    
-    contexts[session_id] = Context(
-        cv=request.cv,
-        company=request.company,
-        position=request.position
-    )
-    
+
+    if config.use_database and db:
+        update_context_db(db, session_id, request.cv, request.company, request.position)
+    else:
+        contexts[session_id] = Context(
+            cv=request.cv,
+            company=request.company,
+            position=request.position
+        )
+
     print(f"✅ Context updated: {request.company} - {request.position}")
-    
+
     return {"success": True, "message": "Context updated"}
 
 
 @app.get("/api/history", response_model=dict)
-async def get_history():
+async def get_history(db: Session = Depends(get_db) if config.use_database else None):
     """Get interview history."""
     session_id = "default"  # In production, get from auth
-    
+
+    if config.use_database and db:
+        history_data = get_history_db(db, session_id)
+    else:
+        history_data = history.get(session_id, [])
+
     return {
         "success": True,
-        "history": history.get(session_id, [])
+        "history": history_data
     }
 
 
@@ -453,11 +494,23 @@ async def startup_event():
     print(f"📍 Version: 2.0.0")
     print(f"🤖 Gemini Model: {config.gemini_model}")
     print(f"🎤 Whisper Model: {config.whisper_model}")
+    print(f"💾 Database: {'Enabled' if config.use_database else 'Disabled (in-memory)'}")
     print("=" * 60)
-    
+
     # Validate config
     if not config.validate():
         print("⚠️  WARNING: Configuration validation failed!")
+
+    # Initialize database if enabled
+    if config.use_database:
+        try:
+            init_db()
+            if check_db_connection():
+                print("✅ Database connection successful")
+            else:
+                print("⚠️  WARNING: Database connection failed!")
+        except Exception as e:
+            print(f"⚠️  WARNING: Database initialization failed: {e}")
 
 
 @app.on_event("shutdown")
