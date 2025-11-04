@@ -36,7 +36,3 @@ class QuestionDetector:
         
         text_lower = text.lower()
         return any(marker in text_lower for marker in self.markers)
-    
-    def is_valid_length(self, text: str) -> bool:
-        """Check if text meets minimum length requirement."""
-        return len(text) >= self.min_length
