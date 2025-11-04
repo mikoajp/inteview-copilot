@@ -1,6 +1,6 @@
 """Main FastAPI application for Interview Copilot API."""
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Optional, Dict, Any
@@ -16,6 +16,7 @@ from core.transcription import TranscriptionEngine
 from core.question_detector import QuestionDetector
 from core.context_manager import ContextManager
 from models import Context, HistoryEntry
+from rate_limiter import rate_limit, get_limiter
 
 # Initialize FastAPI app
 app = FastAPI(
@@ -23,6 +24,15 @@ app = FastAPI(
     description="AI-powered interview assistance API with Gemini 2.5 Pro",
     version="2.0.0"
 )
+
+# Add rate limiter to app state
+if config.rate_limit_enabled:
+    from slowapi.errors import RateLimitExceeded
+    from slowapi import _rate_limit_exceeded_handler
+
+    limiter = get_limiter()
+    app.state.limiter = limiter
+    app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 # CORS Configuration
 app.add_middleware(
@@ -152,7 +162,8 @@ async def health_check():
 
 
 @app.post("/api/transcribe", response_model=TranscribeResponse)
-async def transcribe_audio(request: TranscribeRequest):
+@rate_limit()
+async def transcribe_audio(request: TranscribeRequest, http_request: Request):
     """Transcribe audio to text."""
     initialize_engines()
     
@@ -178,7 +189,8 @@ async def transcribe_audio(request: TranscribeRequest):
 
 
 @app.post("/api/generate", response_model=GenerateResponse)
-async def generate_answer(request: GenerateRequest):
+@rate_limit()
+async def generate_answer(request: GenerateRequest, http_request: Request):
     """Generate answer for a question."""
     initialize_engines()
     
@@ -211,7 +223,8 @@ async def generate_answer(request: GenerateRequest):
 
 
 @app.post("/api/process_audio", response_model=ProcessAudioResponse)
-async def process_audio(request: ProcessAudioRequest):
+@rate_limit()
+async def process_audio(request: ProcessAudioRequest, http_request: Request):
     """Process audio: transcribe + detect question + generate answer."""
     initialize_engines()
     
@@ -315,7 +328,8 @@ async def get_context():
 
 
 @app.post("/api/context", response_model=dict)
-async def update_context(request: ContextRequest):
+@rate_limit()
+async def update_context(request: ContextRequest, http_request: Request):
     """Update interview context."""
     session_id = "default"  # In production, get from auth
     
@@ -453,6 +467,10 @@ async def startup_event():
     print(f"📍 Version: 2.0.0")
     print(f"🤖 Gemini Model: {config.gemini_model}")
     print(f"🎤 Whisper Model: {config.whisper_model}")
+    print(f"⏱️  Rate Limiting: {'Enabled' if config.rate_limit_enabled else 'Disabled'}")
+    if config.rate_limit_enabled:
+        print(f"   └─ Limit: {config.rate_limit_per_minute} requests/minute")
+        print(f"   └─ Storage: {config.rate_limit_storage}")
     print("=" * 60)
     
     # Validate config

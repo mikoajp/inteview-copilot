@@ -17,6 +17,12 @@ class Config:
 
     cors_origins: str = os.getenv("CORS_ORIGINS", "*")
 
+    # Rate Limiting Configuration
+    rate_limit_enabled: bool = os.getenv("RATE_LIMIT_ENABLED", "True").lower() == "true"
+    rate_limit_per_minute: int = int(os.getenv("RATE_LIMIT_PER_MINUTE", "30"))
+    rate_limit_storage: str = os.getenv("RATE_LIMIT_STORAGE", "memory")  # memory or redis
+    redis_url: str = os.getenv("REDIS_URL", "redis://localhost:6379")
+
     def validate(self) -> bool:
         ok = True
         if not self.gemini_api_key:

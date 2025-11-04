@@ -5,3 +5,5 @@ openai-whisper
 numpy
 pydantic
 python-dotenv
+slowapi
+redis
