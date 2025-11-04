@@ -2,7 +2,8 @@
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel, Field, constr
 from typing import Optional, Dict
 from sqlalchemy.orm import Session
 import numpy as np
@@ -27,7 +28,7 @@ from metrics import (
 )
 from rate_limiter import rate_limit, get_limiter
 from auth import (
-    get_current_user, get_optional_user, TokenData, UserCredentials,
+    get_current_user, get_optional_user, get_websocket_user, TokenData, UserCredentials,
     UserCreate, User, TokenResponse, create_access_token, create_user,
     authenticate_user, get_user_by_id
 )
@@ -57,6 +58,30 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# HTTPS enforcement in production (when not in debug mode)
+if not config.api_debug:
+    from fastapi.middleware.trustedhost import TrustedHostMiddleware
+
+    @app.middleware("http")
+    async def enforce_https(request: Request, call_next):
+        """Enforce HTTPS in production mode."""
+        # Check if request is not already HTTPS
+        if request.url.scheme != "https":
+            # Check for X-Forwarded-Proto header (from reverse proxy)
+            forwarded_proto = request.headers.get("X-Forwarded-Proto")
+            if forwarded_proto != "https":
+                # Allow health check endpoints without HTTPS
+                if request.url.path not in ["/api/health", "/metrics"]:
+                    log_warning(f"Non-HTTPS request blocked: {request.url}", extra={
+                        "client": request.client.host if request.client else "unknown",
+                        "path": request.url.path
+                    })
+                    return JSONResponse(
+                        status_code=403,
+                        content={"detail": "HTTPS required in production mode"}
+                    )
+        return await call_next(request)
 
 # Request logging middleware
 @app.middleware("http")
@@ -132,8 +157,8 @@ def initialize_engines():
 # ============= Pydantic Models =============
 
 class TranscribeRequest(BaseModel):
-    audio: str  # base64 encoded audio
-    language: Optional[str] = "pl"
+    audio: str = Field(..., max_length=10_000_000, description="Base64 encoded audio (max ~10MB)")
+    language: constr(max_length=10) = "pl"
 
 class TranscribeResponse(BaseModel):
     text: str
@@ -141,18 +166,18 @@ class TranscribeResponse(BaseModel):
     timestamp: str
 
 class GenerateRequest(BaseModel):
-    question: str
+    question: str = Field(..., min_length=1, max_length=5000, description="Question text (max 5000 chars)")
     context: Dict[str, str]
-    temperature: Optional[float] = 0.7
-    max_tokens: Optional[int] = 500
+    temperature: Optional[float] = Field(0.7, ge=0.0, le=2.0)
+    max_tokens: Optional[int] = Field(500, ge=1, le=2000)
 
 class GenerateResponse(BaseModel):
     answer: str
     timestamp: str
 
 class ProcessAudioRequest(BaseModel):
-    audio: list  # Float32Array as list
-    sampleRate: Optional[int] = 16000
+    audio: list = Field(..., max_items=1_000_000, description="Float32Array as list (max 1M samples ~60s)")
+    sampleRate: Optional[int] = Field(16000, ge=8000, le=48000)
 
 class ProcessAudioResponse(BaseModel):
     success: bool
@@ -162,10 +187,10 @@ class ProcessAudioResponse(BaseModel):
     transcription: Optional[str] = None
 
 class ContextRequest(BaseModel):
-    cv: str
-    company: str
-    position: str
-    custom_system_prompt: Optional[str] = ""
+    cv: str = Field(..., max_length=50_000, description="CV text (max 50KB)")
+    company: str = Field(..., min_length=1, max_length=200, description="Company name")
+    position: str = Field(..., min_length=1, max_length=200, description="Job position")
+    custom_system_prompt: Optional[str] = Field("", max_length=10_000, description="Custom system prompt (max 10KB)")
 
 class ContextResponse(BaseModel):
     cv: str
@@ -658,15 +683,34 @@ async def stop_session(current_user: User = Depends(get_optional_user)):
 # ============= WebSocket Endpoint =============
 
 @app.websocket("/ws/audio")
-async def websocket_audio_stream(websocket: WebSocket):
-    """WebSocket endpoint for real-time audio streaming."""
+async def websocket_audio_stream(websocket: WebSocket, token: Optional[str] = None):
+    """
+    WebSocket endpoint for real-time audio streaming.
+
+    Authentication:
+        - Pass JWT token as query parameter: ws://host/ws/audio?token=YOUR_JWT_TOKEN
+        - Or send auth message as first message: {"type": "auth", "token": "YOUR_JWT_TOKEN"}
+        - If REQUIRE_AUTH is False, authentication is optional
+    """
     await websocket.accept()
-    log_info("WebSocket connected")
 
     initialize_engines()
 
-    # TODO: Add WebSocket authentication in production
-    session_id = "anonymous"  # In production, extract from token in connection
+    # Authenticate user from query param token
+    user = await get_websocket_user(token)
+
+    # If auth is required and no valid token, close connection
+    if config.require_auth and not user:
+        log_warning("WebSocket connection rejected: authentication required")
+        await websocket.send_json({
+            "type": "error",
+            "message": "Authentication required. Provide token as query parameter: ?token=YOUR_JWT_TOKEN"
+        })
+        await websocket.close(code=1008)  # Policy violation
+        return
+
+    session_id = user.user_id if user else "anonymous"
+    log_info(f"WebSocket connected: {session_id}")
 
     try:
         while True:
