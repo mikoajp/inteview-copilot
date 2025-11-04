@@ -1,6 +1,6 @@
 # 🎯 Interview Copilot - Production Ready API
 
-> **FastAPI backend with Google Gemini 2.0 Flash for AI-powered interview assistance**
+> **FastAPI backend with Google Gemini 2.5 Pro for AI-powered interview assistance**
 
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.100+-green.svg)](https://fastapi.tiangolo.com/)
@@ -10,7 +10,7 @@
 
 ### Core Functionality
 - 🎤 **Real-time Audio Transcription** - OpenAI Whisper for accurate speech-to-text
-- 🤖 **AI Answer Generation** - Google Gemini 2.0 Flash for intelligent responses
+- 🤖 **AI Answer Generation** - Google Gemini 2.5 Pro for intelligent responses
 - 🔍 **Question Detection** - Automatic detection of interview questions (19 markers PL/EN)
 - 📝 **Context Management** - CV, company, and position-aware responses
 - 🎨 **Custom Prompts** - User-customizable system prompts for personalized AI behavior

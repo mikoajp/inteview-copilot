@@ -16,3 +16,6 @@ slowapi
 redis
 python-json-logger
 prometheus-client
+pytest
+pytest-asyncio
+httpx
