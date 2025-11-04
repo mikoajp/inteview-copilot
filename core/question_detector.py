@@ -1,6 +1,10 @@
 """Question detection logic."""
 
-from ..config import constants as const
+QUESTION_MARKERS = [
+    "what", "why", "how", "when", "where", "who", "which", "can you", "could you", "would you",
+    "jak", "dlaczego", "kiedy", "gdzie", "kto", "który", "czy", "możesz", "mógłbyś"
+]
+MIN_QUESTION_LENGTH = 8
 
 
 class QuestionDetector:
@@ -14,8 +18,8 @@ class QuestionDetector:
             markers: List of question marker words
             min_length: Minimum text length to consider
         """
-        self.markers = markers or const.QUESTION_MARKERS
-        self.min_length = min_length or const.MIN_QUESTION_LENGTH
+        self.markers = markers or QUESTION_MARKERS
+        self.min_length = min_length or MIN_QUESTION_LENGTH
     
     def is_question(self, text: str) -> bool:
         """

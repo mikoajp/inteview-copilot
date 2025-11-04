@@ -9,7 +9,7 @@ from datetime import datetime
 class Context:
     """User context for interview preparation."""
     cv: str = ''
-    company_name: str = ''
+    company: str = ''
     position: str = ''
     
     def to_dict(self) -> dict:
@@ -23,11 +23,11 @@ class Context:
     
     def is_empty(self) -> bool:
         """Check if context is empty."""
-        return not any([self.cv.strip(), self.company_name.strip(), self.position.strip()])
+        return not any([self.cv.strip(), self.company.strip(), self.position.strip()])
     
     def filled_count(self) -> int:
         """Count filled fields."""
-        return sum(1 for v in [self.cv, self.company_name, self.position] if v.strip())
+        return sum(1 for v in [self.cv, self.company, self.position] if v.strip())
 
 
 @dataclass

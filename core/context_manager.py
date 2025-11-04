@@ -1,26 +1,19 @@
 """Context management for building prompts."""
 
-from ..data.models import Context
+from ..models import Context
 
 
 class ContextManager:
     """Manages interview context and builds system prompts."""
     
     def __init__(self, context: Context = None):
-        """Initialize with context."""
         self.context = context or Context()
     
     def update_context(self, context: Context):
-        """Update the context."""
         self.context = context
     
-    def build_system_prompt(self) -> str:
-        """
-        Build system prompt for LLM based on context.
-        
-        Returns:
-            Complete system prompt string
-        """
+    def build_system_prompt(self, cv: str = "", company: str = "", position: str = "") -> str:
+        """Build system prompt for LLM based on provided values or stored context."""
         prompt = """Jesteś ekspertem od rozmów rekrutacyjnych.
 
 ZASADY:
@@ -29,16 +22,15 @@ ZASADY:
 - Pozytywny ton
 - Po polsku
 """
-        
-        if self.context.cv:
-            prompt += f"\n\nTWOJE CV:\n{self.context.cv}\n"
-        
-        if self.context.company_name:
-            prompt += f"\nFIRMA: {self.context.company_name}\n"
-        
-        if self.context.position:
-            prompt += f"\nSTANOWISKO: {self.context.position}\n"
-        
+        cv_val = cv or self.context.cv
+        company_val = company or getattr(self.context, "company", "")
+        position_val = position or self.context.position
+        if cv_val:
+            prompt += f"\n\nTWOJE CV:\n{cv_val}\n"
+        if company_val:
+            prompt += f"\nFIRMA: {company_val}\n"
+        if position_val:
+            prompt += f"\nSTANOWISKO: {position_val}\n"
         return prompt
     
     def build_user_prompt(self, question: str) -> str:
