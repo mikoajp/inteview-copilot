@@ -1,0 +1,24 @@
+services:
+  - type: web
+    name: interview-copilot-api
+    env: python
+    region: oregon
+    plan: starter
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: GEMINI_MODEL
+        value: gemini-2.0-flash-exp
+      - key: WHISPER_MODEL
+        value: base
+      - key: WHISPER_LANGUAGE
+        value: pl
+      - key: API_DEBUG
+        value: "False"
+      - key: CORS_ORIGINS
+        value: "*"
+      - key: PYTHON_VERSION
+        value: 3.10.0
+    healthCheckPath: /api/health
