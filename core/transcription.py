@@ -44,8 +44,3 @@ class TranscriptionEngine:
         except Exception as e:
             print(f"❌ Transcription error: {e}")
             return None
-    
-    def change_language(self, language: str):
-        """Change transcription language."""
-        self.language = language
-        print(f"🔄 Language changed to: {language}")
