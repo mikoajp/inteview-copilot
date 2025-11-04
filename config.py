@@ -17,6 +17,14 @@ class Config:
 
     cors_origins: str = os.getenv("CORS_ORIGINS", "*")
 
+    # JWT Configuration
+    jwt_secret_key: str = os.getenv("JWT_SECRET_KEY", "your-secret-key-change-in-production")
+    jwt_algorithm: str = os.getenv("JWT_ALGORITHM", "HS256")
+    jwt_access_token_expire_minutes: int = int(os.getenv("JWT_ACCESS_TOKEN_EXPIRE_MINUTES", "1440"))  # 24 hours
+
+    # Auth Configuration
+    require_auth: bool = os.getenv("REQUIRE_AUTH", "True").lower() == "true"
+
     def validate(self) -> bool:
         ok = True
         if not self.gemini_api_key:

@@ -1,6 +1,6 @@
 """Main FastAPI application for Interview Copilot API."""
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Optional, Dict, Any
@@ -8,7 +8,7 @@ import asyncio
 import numpy as np
 import base64
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from config import config
 from core.gemini_client import GeminiClient
@@ -16,6 +16,11 @@ from core.transcription import TranscriptionEngine
 from core.question_detector import QuestionDetector
 from core.context_manager import ContextManager
 from models import Context, HistoryEntry
+from auth import (
+    get_current_user, get_optional_user, TokenData, UserCredentials,
+    UserCreate, User, TokenResponse, create_access_token, create_user,
+    authenticate_user
+)
 
 # Initialize FastAPI app
 app = FastAPI(
@@ -111,9 +116,80 @@ class HealthResponse(BaseModel):
     gemini_model: str
     whisper_model: str
     timestamp: str
+    auth_required: bool
+
+
+# ============= Helper Functions =============
+
+def get_session_id(user: Optional[TokenData]) -> str:
+    """Get session ID from user token or default."""
+    if user and user.user_id:
+        return user.user_id
+    return "default"
 
 
 # ============= REST Endpoints =============
+
+# ============= Authentication Endpoints =============
+
+@app.post("/api/auth/register", response_model=dict)
+async def register(user_data: UserCreate):
+    """Register new user."""
+    try:
+        user = create_user(
+            email=user_data.email,
+            password=user_data.password,
+            full_name=user_data.full_name
+        )
+
+        return {
+            "success": True,
+            "message": "User registered successfully",
+            "user": {
+                "id": user.id,
+                "email": user.email,
+                "full_name": user.full_name
+            }
+        }
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Registration error: {str(e)}")
+
+
+@app.post("/api/auth/login", response_model=TokenResponse)
+async def login(credentials: UserCredentials):
+    """Login and get JWT token."""
+    user = authenticate_user(credentials.email, credentials.password)
+
+    if not user:
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid email or password"
+        )
+
+    # Create access token
+    access_token = create_access_token(
+        data={"sub": user.id, "email": user.email}
+    )
+
+    return TokenResponse(
+        access_token=access_token,
+        token_type="bearer",
+        expires_in=config.jwt_access_token_expire_minutes * 60  # Convert to seconds
+    )
+
+
+@app.get("/api/auth/me", response_model=User)
+async def get_current_user_info(current_user: TokenData = Depends(get_current_user)):
+    """Get current user information."""
+    from auth import get_user_by_id
+
+    user = get_user_by_id(current_user.user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    return user
 
 @app.get("/", response_model=dict)
 async def root():
@@ -133,13 +209,14 @@ async def health_check():
     try:
         initialize_engines()
         gemini_ok = gemini_client.check_connection() if gemini_client else False
-        
+
         return HealthResponse(
             status="healthy" if gemini_ok else "degraded",
             version="2.0.0",
             gemini_model=config.gemini_model,
             whisper_model=config.whisper_model,
-            timestamp=datetime.utcnow().isoformat()
+            timestamp=datetime.utcnow().isoformat(),
+            auth_required=config.require_auth
         )
     except Exception as e:
         return HealthResponse(
@@ -147,13 +224,20 @@ async def health_check():
             version="2.0.0",
             gemini_model=config.gemini_model,
             whisper_model=config.whisper_model,
-            timestamp=datetime.utcnow().isoformat()
+            timestamp=datetime.utcnow().isoformat(),
+            auth_required=config.require_auth
         )
 
 
 @app.post("/api/transcribe", response_model=TranscribeResponse)
-async def transcribe_audio(request: TranscribeRequest):
+async def transcribe_audio(
+    request: TranscribeRequest,
+    current_user: Optional[TokenData] = Depends(get_optional_user)
+):
     """Transcribe audio to text."""
+    if config.require_auth and not current_user:
+        raise HTTPException(status_code=401, detail="Authentication required")
+
     initialize_engines()
     
     try:
@@ -178,8 +262,14 @@ async def transcribe_audio(request: TranscribeRequest):
 
 
 @app.post("/api/generate", response_model=GenerateResponse)
-async def generate_answer(request: GenerateRequest):
+async def generate_answer(
+    request: GenerateRequest,
+    current_user: Optional[TokenData] = Depends(get_optional_user)
+):
     """Generate answer for a question."""
+    if config.require_auth and not current_user:
+        raise HTTPException(status_code=401, detail="Authentication required")
+
     initialize_engines()
     
     try:
@@ -211,40 +301,46 @@ async def generate_answer(request: GenerateRequest):
 
 
 @app.post("/api/process_audio", response_model=ProcessAudioResponse)
-async def process_audio(request: ProcessAudioRequest):
+async def process_audio(
+    request: ProcessAudioRequest,
+    current_user: Optional[TokenData] = Depends(get_optional_user)
+):
     """Process audio: transcribe + detect question + generate answer."""
+    if config.require_auth and not current_user:
+        raise HTTPException(status_code=401, detail="Authentication required")
+
     initialize_engines()
-    
+
     try:
         # Convert list to numpy array
         audio_array = np.array(request.audio, dtype=np.float32)
-        
+
         # Normalize if needed
         if audio_array.max() > 1.0:
             audio_array = audio_array / 32768.0
-        
+
         print(f"🎤 Processing audio: {len(audio_array)} samples")
-        
+
         # Transcribe
         text = transcription_engine.transcribe(audio_array)
-        
+
         if not text:
             return ProcessAudioResponse(
                 success=True,
                 question=None,
                 answer=None
             )
-        
+
         print(f"📝 Transcribed: {text}")
-        
+
         # Check if it's a question
         is_question = question_detector.is_question(text)
-        
+
         if is_question:
             print("❓ Question detected!")
-            
-            # Get context from session (in production, use database)
-            session_id = "default"  # In production, get from auth
+
+            # Get context from session
+            session_id = get_session_id(current_user)
             context_data = contexts.get(session_id, Context())
             
             # Build system prompt
@@ -302,11 +398,14 @@ async def process_audio(request: ProcessAudioRequest):
 
 
 @app.get("/api/context", response_model=ContextResponse)
-async def get_context():
+async def get_context(current_user: Optional[TokenData] = Depends(get_optional_user)):
     """Get interview context."""
-    session_id = "default"  # In production, get from auth
+    if config.require_auth and not current_user:
+        raise HTTPException(status_code=401, detail="Authentication required")
+
+    session_id = get_session_id(current_user)
     context_data = contexts.get(session_id, Context())
-    
+
     return ContextResponse(
         cv=context_data.cv,
         company=context_data.company,
@@ -315,10 +414,16 @@ async def get_context():
 
 
 @app.post("/api/context", response_model=dict)
-async def update_context(request: ContextRequest):
+async def update_context(
+    request: ContextRequest,
+    current_user: Optional[TokenData] = Depends(get_optional_user)
+):
     """Update interview context."""
-    session_id = "default"  # In production, get from auth
-    
+    if config.require_auth and not current_user:
+        raise HTTPException(status_code=401, detail="Authentication required")
+
+    session_id = get_session_id(current_user)
+
     contexts[session_id] = Context(
         cv=request.cv,
         company=request.company,
@@ -331,10 +436,13 @@ async def update_context(request: ContextRequest):
 
 
 @app.get("/api/history", response_model=dict)
-async def get_history():
+async def get_history(current_user: Optional[TokenData] = Depends(get_optional_user)):
     """Get interview history."""
-    session_id = "default"  # In production, get from auth
-    
+    if config.require_auth and not current_user:
+        raise HTTPException(status_code=401, detail="Authentication required")
+
+    session_id = get_session_id(current_user)
+
     return {
         "success": True,
         "history": history.get(session_id, [])
