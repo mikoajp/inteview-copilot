@@ -1,22 +1,76 @@
 version: '3.8'
 
 services:
-  api:
+  postgres:
+    image: postgres:15-alpine
+    container_name: interview-copilot-db
+    environment:
+      POSTGRES_DB: interview_copilot
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    container_name: interview-copilot-redis
+    volumes:
+      - redis_data:/data
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
+  app:
     build: .
     container_name: interview-copilot-api
     ports:
       - "5000:5000"
     environment:
+      # Gemini API
       - GEMINI_API_KEY=${GEMINI_API_KEY}
       - GEMINI_MODEL=${GEMINI_MODEL:-gemini-2.0-flash-exp}
+      
+      # Whisper
       - WHISPER_MODEL=${WHISPER_MODEL:-base}
       - WHISPER_LANGUAGE=${WHISPER_LANGUAGE:-pl}
-      - API_HOST=0.0.0.0
-      - API_PORT=5000
-      - API_DEBUG=${API_DEBUG:-False}
+      
+      # Database
+      - USE_DATABASE=True
+      - DATABASE_URL=postgresql://postgres:${DB_PASSWORD:-postgres}@postgres:5432/interview_copilot
+      
+      # Redis
+      - REDIS_URL=redis://redis:6379
+      - RATE_LIMIT_STORAGE=redis
+      
+      # Auth
+      - REQUIRE_AUTH=${REQUIRE_AUTH:-True}
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY}
+      
+      # Rate Limiting
+      - RATE_LIMIT_ENABLED=True
+      - RATE_LIMIT_PER_MINUTE=${RATE_LIMIT_PER_MINUTE:-30}
+      
+      # API
+      - API_DEBUG=False
       - CORS_ORIGINS=${CORS_ORIGINS:-*}
-    volumes:
-      - ./data:/app/data  # For storing history/context
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:5000/api/health"]
@@ -24,9 +78,39 @@ services:
       timeout: 10s
       retries: 3
       start_period: 40s
-    networks:
-      - interview-copilot
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: interview-copilot-prometheus
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+    ports:
+      - "9090:9090"
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: interview-copilot-grafana
+    volumes:
+      - grafana_data:/var/lib/grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_USER:-admin}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-admin}
+      - GF_INSTALL_PLUGINS=grafana-piechart-panel
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  redis_data:
+  prometheus_data:
+  grafana_data:
 
 networks:
-  interview-copilot:
-    driver: bridge
+  default:
+    name: interview-copilot-network
