@@ -6,7 +6,8 @@ from jose import JWTError, jwt
 from passlib.context import CryptContext
 from fastapi import Depends, HTTPException, status, Header
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from pydantic import BaseModel
+from pydantic import BaseModel, EmailStr
+from sqlalchemy.orm import Session
 from config import config
 
 # Password hashing
@@ -25,13 +26,13 @@ class TokenData(BaseModel):
 
 class UserCredentials(BaseModel):
     """User credentials for login."""
-    email: str
+    email: EmailStr
     password: str
 
 
 class UserCreate(BaseModel):
     """User creation model."""
-    email: str
+    email: EmailStr
     password: str
     full_name: Optional[str] = None
 
@@ -49,7 +50,7 @@ class TokenResponse(BaseModel):
     """JWT Token response."""
     access_token: str
     token_type: str = "bearer"
-    expires_in: int
+    user: User
 
 
 # In-memory user storage (replace with database in production)
@@ -146,54 +147,132 @@ async def get_websocket_user(token: Optional[str] = None) -> Optional[TokenData]
         return None
 
 
-def create_user(email: str, password: str, full_name: Optional[str] = None) -> User:
-    """Create new user."""
-    if email in users_db:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Email already registered"
+async def create_user(user_data: UserCreate, db: Optional[Session] = None) -> User:
+    """
+    Create new user.
+
+    Args:
+        user_data: User creation data (email, password, full_name)
+        db: Database session (if None, uses in-memory storage)
+
+    Returns:
+        Created User object
+
+    Raises:
+        HTTPException: If email already registered
+    """
+    email = user_data.email
+    password = user_data.password
+    full_name = user_data.full_name
+
+    # Use database if available
+    if db is not None and config.use_database:
+        # Import here to avoid circular dependency
+        from db_operations import create_user_db, get_user_by_email
+
+        # Check if user exists
+        existing_user = get_user_by_email(db, email)
+        if existing_user:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Email already registered"
+            )
+
+        # Create user in database
+        user_id = f"user_{datetime.utcnow().timestamp()}"
+        hashed_password = get_password_hash(password)
+
+        db_user = create_user_db(db, user_id, email, hashed_password, full_name)
+
+        return User(
+            id=db_user.id,
+            email=db_user.email,
+            full_name=db_user.full_name,
+            is_active=db_user.is_active,
+            created_at=db_user.created_at
         )
 
-    user_id = f"user_{len(users_db) + 1}"
-    hashed_password = get_password_hash(password)
+    # Fallback to in-memory storage
+    else:
+        if email in users_db:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Email already registered"
+            )
 
-    user_data = {
-        "id": user_id,
-        "email": email,
-        "hashed_password": hashed_password,
-        "full_name": full_name,
-        "is_active": True,
-        "created_at": datetime.utcnow()
-    }
+        user_id = f"user_{len(users_db) + 1}"
+        hashed_password = get_password_hash(password)
 
-    users_db[email] = user_data
+        user_dict = {
+            "id": user_id,
+            "email": email,
+            "hashed_password": hashed_password,
+            "full_name": full_name,
+            "is_active": True,
+            "created_at": datetime.utcnow()
+        }
 
-    return User(
-        id=user_id,
-        email=email,
-        full_name=full_name,
-        is_active=True,
-        created_at=user_data["created_at"]
-    )
+        users_db[email] = user_dict
+
+        return User(
+            id=user_id,
+            email=email,
+            full_name=full_name,
+            is_active=True,
+            created_at=user_dict["created_at"]
+        )
 
 
-def authenticate_user(email: str, password: str) -> Optional[User]:
-    """Authenticate user with email and password."""
-    user_data = users_db.get(email)
+async def authenticate_user(email: str, password: str, db: Optional[Session] = None) -> Optional[User]:
+    """
+    Authenticate user with email and password.
 
-    if not user_data:
-        return None
+    Args:
+        email: User email
+        password: Plain text password
+        db: Database session (if None, uses in-memory storage)
 
-    if not verify_password(password, user_data["hashed_password"]):
-        return None
+    Returns:
+        User object if authentication successful, None otherwise
+    """
+    # Use database if available
+    if db is not None and config.use_database:
+        # Import here to avoid circular dependency
+        from db_operations import get_user_by_email
 
-    return User(
-        id=user_data["id"],
-        email=user_data["email"],
-        full_name=user_data.get("full_name"),
-        is_active=user_data["is_active"],
-        created_at=user_data["created_at"]
-    )
+        db_user = get_user_by_email(db, email)
+
+        if not db_user:
+            return None
+
+        if not verify_password(password, db_user.hashed_password):
+            return None
+
+        return User(
+            id=db_user.id,
+            email=db_user.email,
+            full_name=db_user.full_name,
+            is_active=db_user.is_active,
+            created_at=db_user.created_at
+        )
+
+    # Fallback to in-memory storage
+    else:
+        user_data = users_db.get(email)
+
+        if not user_data:
+            return None
+
+        if not verify_password(password, user_data["hashed_password"]):
+            return None
+
+        return User(
+            id=user_data["id"],
+            email=user_data["email"],
+            full_name=user_data.get("full_name"),
+            is_active=user_data["is_active"],
+            created_at=user_data["created_at"]
+        )
 
 
 def get_user_by_id(user_id: str) -> Optional[User]:
