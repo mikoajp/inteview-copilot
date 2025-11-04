@@ -99,11 +99,13 @@ class ContextRequest(BaseModel):
     cv: str
     company: str
     position: str
+    custom_system_prompt: Optional[str] = ""
 
 class ContextResponse(BaseModel):
     cv: str
     company: str
     position: str
+    custom_system_prompt: str
 
 class HealthResponse(BaseModel):
     status: str
@@ -187,7 +189,8 @@ async def generate_answer(request: GenerateRequest):
         system_prompt = context_manager.build_system_prompt(
             cv=request.context.get("cv", ""),
             company=request.context.get("company", ""),
-            position=request.context.get("position", "")
+            position=request.context.get("position", ""),
+            custom_system_prompt=request.context.get("custom_system_prompt", "")
         )
         
         # Generate response
@@ -251,7 +254,8 @@ async def process_audio(request: ProcessAudioRequest):
             system_prompt = context_manager.build_system_prompt(
                 cv=context_data.cv,
                 company=context_data.company,
-                position=context_data.position
+                position=context_data.position,
+                custom_system_prompt=context_data.custom_system_prompt
             )
             
             # Generate answer
@@ -306,11 +310,12 @@ async def get_context():
     """Get interview context."""
     session_id = "default"  # In production, get from auth
     context_data = contexts.get(session_id, Context())
-    
+
     return ContextResponse(
         cv=context_data.cv,
         company=context_data.company,
-        position=context_data.position
+        position=context_data.position,
+        custom_system_prompt=context_data.custom_system_prompt
     )
 
 
@@ -318,11 +323,12 @@ async def get_context():
 async def update_context(request: ContextRequest):
     """Update interview context."""
     session_id = "default"  # In production, get from auth
-    
+
     contexts[session_id] = Context(
         cv=request.cv,
         company=request.company,
-        position=request.position
+        position=request.position,
+        custom_system_prompt=request.custom_system_prompt or ""
     )
     
     print(f"✅ Context updated: {request.company} - {request.position}")
@@ -405,7 +411,8 @@ async def websocket_audio_stream(websocket: WebSocket):
                         system_prompt = context_manager.build_system_prompt(
                             cv=context_data.cv,
                             company=context_data.company,
-                            position=context_data.position
+                            position=context_data.position,
+                            custom_system_prompt=context_data.custom_system_prompt
                         )
                         
                         # Generate answer
@@ -428,7 +435,8 @@ async def websocket_audio_stream(websocket: WebSocket):
                 contexts[session_id] = Context(
                     cv=context_data.get("cv", ""),
                     company=context_data.get("company", ""),
-                    position=context_data.get("position", "")
+                    position=context_data.get("position", ""),
+                    custom_system_prompt=context_data.get("custom_system_prompt", "")
                 )
                 await websocket.send_json({
                     "type": "status",
