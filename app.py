@@ -16,6 +16,9 @@ from core.transcription import TranscriptionEngine
 from core.question_detector import QuestionDetector
 from core.context_manager import ContextManager
 from models import Context, HistoryEntry
+from logger import log_info, log_error, log_warning, log_debug
+from metrics import get_metrics
+import time
 
 # Initialize FastAPI app
 app = FastAPI(
@@ -49,14 +52,14 @@ def initialize_engines():
     global gemini_client, transcription_engine
     
     if gemini_client is None:
-        print("🔄 Initializing Gemini client...")
+        log_info("🔄 Initializing Gemini client...")
         gemini_client = GeminiClient(
             api_key=config.gemini_api_key,
             model=config.gemini_model
         )
     
     if transcription_engine is None:
-        print("🔄 Loading Whisper model...")
+        log_info("🔄 Loading Whisper model...")
         transcription_engine = TranscriptionEngine(
             model_name=config.whisper_model,
             language=config.whisper_language
@@ -122,8 +125,15 @@ async def root():
         "message": "Interview Copilot API",
         "version": "2.0.0",
         "docs": "/docs",
-        "health": "/api/health"
+        "health": "/api/health",
+        "metrics": "/metrics"
     }
+
+
+@app.get("/metrics")
+async def metrics():
+    """Prometheus metrics endpoint."""
+    return await get_metrics()
 
 
 @app.get("/api/health", response_model=HealthResponse)
@@ -223,7 +233,7 @@ async def process_audio(request: ProcessAudioRequest):
         if audio_array.max() > 1.0:
             audio_array = audio_array / 32768.0
         
-        print(f"🎤 Processing audio: {len(audio_array)} samples")
+        log_info(f"🎤 Processing audio: {len(audio_array)} samples")
         
         # Transcribe
         text = transcription_engine.transcribe(audio_array)
@@ -235,13 +245,13 @@ async def process_audio(request: ProcessAudioRequest):
                 answer=None
             )
         
-        print(f"📝 Transcribed: {text}")
+        log_info(f"📝 Transcribed: {text}")
         
         # Check if it's a question
         is_question = question_detector.is_question(text)
         
         if is_question:
-            print("❓ Question detected!")
+            log_info("❓ Question detected!")
             
             # Get context from session (in production, use database)
             session_id = "default"  # In production, get from auth
@@ -263,7 +273,7 @@ async def process_audio(request: ProcessAudioRequest):
             )
             
             if answer:
-                print(f"💡 Answer generated: {answer[:100]}...")
+                log_info(f"💡 Answer generated: {answer[:100]}...")
                 
                 # Save to history
                 if session_id not in history:
@@ -288,7 +298,7 @@ async def process_audio(request: ProcessAudioRequest):
                     answer=None
                 )
         else:
-            print("ℹ️ Not a question")
+            log_info("ℹ️ Not a question")
             return ProcessAudioResponse(
                 success=True,
                 question=None,
@@ -297,7 +307,7 @@ async def process_audio(request: ProcessAudioRequest):
             )
     
     except Exception as e:
-        print(f"❌ Error processing audio: {e}")
+        log_info(f"❌ Error processing audio: {e}")
         raise HTTPException(status_code=500, detail=f"Processing error: {str(e)}")
 
 
@@ -325,7 +335,7 @@ async def update_context(request: ContextRequest):
         position=request.position
     )
     
-    print(f"✅ Context updated: {request.company} - {request.position}")
+    log_info(f"✅ Context updated: {request.company} - {request.position}")
     
     return {"success": True, "message": "Context updated"}
 
@@ -367,7 +377,7 @@ async def stop_session():
 async def websocket_audio_stream(websocket: WebSocket):
     """WebSocket endpoint for real-time audio streaming."""
     await websocket.accept()
-    print("🔌 WebSocket connected")
+    log_info("🔌 WebSocket connected")
     
     initialize_engines()
     
@@ -436,9 +446,9 @@ async def websocket_audio_stream(websocket: WebSocket):
                 })
     
     except WebSocketDisconnect:
-        print("🔌 WebSocket disconnected")
+        log_info("🔌 WebSocket disconnected")
     except Exception as e:
-        print(f"❌ WebSocket error: {e}")
+        log_info(f"❌ WebSocket error: {e}")
         await websocket.close()
 
 
@@ -447,23 +457,23 @@ async def websocket_audio_stream(websocket: WebSocket):
 @app.on_event("startup")
 async def startup_event():
     """Run on application startup."""
-    print("=" * 60)
-    print("🎯 INTERVIEW COPILOT API SERVER")
-    print("=" * 60)
-    print(f"📍 Version: 2.0.0")
-    print(f"🤖 Gemini Model: {config.gemini_model}")
-    print(f"🎤 Whisper Model: {config.whisper_model}")
-    print("=" * 60)
+    log_info("=" * 60)
+    log_info("🎯 INTERVIEW COPILOT API SERVER")
+    log_info("=" * 60)
+    log_info(f"📍 Version: 2.0.0")
+    log_info(f"🤖 Gemini Model: {config.gemini_model}")
+    log_info(f"🎤 Whisper Model: {config.whisper_model}")
+    log_info("=" * 60)
     
     # Validate config
     if not config.validate():
-        print("⚠️  WARNING: Configuration validation failed!")
+        log_info("⚠️  WARNING: Configuration validation failed!")
 
 
 @app.on_event("shutdown")
 async def shutdown_event():
     """Run on application shutdown."""
-    print("👋 Shutting down Interview Copilot API...")
+    log_info("👋 Shutting down Interview Copilot API...")
 
 
 if __name__ == "__main__":
