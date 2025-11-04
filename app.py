@@ -46,7 +46,7 @@ if config.use_database:
 # Initialize FastAPI app
 app = FastAPI(
     title="Interview Copilot API",
-    description="AI-powered interview assistance API with Gemini 2.5 Pro",
+    description="AI-powered interview assistance API with Google Gemini 2.5 Pro",
     version="2.0.0"
 )
 

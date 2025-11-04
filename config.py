@@ -8,7 +8,7 @@ import os
 class Config:
     # Gemini API Configuration
     gemini_api_key: str = os.getenv("GEMINI_API_KEY", "")
-    gemini_model: str = os.getenv("GEMINI_MODEL", "gemini-2.0-flash-exp")
+    gemini_model: str = os.getenv("GEMINI_MODEL", "gemini-2.5-pro-exp-03-25")
 
     # Whisper Configuration
     whisper_model: str = os.getenv("WHISPER_MODEL", "base")
