@@ -41,10 +41,49 @@ class Config:
     redis_url: str = os.getenv("REDIS_URL", "redis://localhost:6379")
 
     def validate(self) -> bool:
+        """
+        Validate configuration settings.
+
+        Returns:
+            True if all validations pass, False otherwise
+        """
         ok = True
+
+        # Validate Gemini API key
         if not self.gemini_api_key:
-            print("⚠️ GEMINI_API_KEY is missing")
+            print("⚠️  ERROR: GEMINI_API_KEY is missing")
             ok = False
+
+        # Validate JWT secret in production mode
+        if self.require_auth:
+            # Check if using default/weak secret
+            weak_secrets = [
+                "your-secret-key-change-in-production",
+                "secret",
+                "changeme",
+                "test",
+                "dev"
+            ]
+
+            if self.jwt_secret_key in weak_secrets:
+                print("⚠️  ERROR: JWT_SECRET_KEY is using a default/weak value!")
+                print("   Please set a strong random secret (minimum 64 characters)")
+                print("   Generate one with: openssl rand -hex 32")
+                ok = False
+
+            # Check minimum length
+            elif len(self.jwt_secret_key) < 32:
+                print(f"⚠️  ERROR: JWT_SECRET_KEY is too short ({len(self.jwt_secret_key)} chars)")
+                print("   Minimum required: 32 characters for security")
+                print("   Recommended: 64+ characters")
+                print("   Generate one with: openssl rand -hex 32")
+                ok = False
+
+        # Validate database URL in production
+        if self.use_database and not self.api_debug:
+            if "localhost" in self.database_url or "127.0.0.1" in self.database_url:
+                print("⚠️  WARNING: DATABASE_URL points to localhost in production mode")
+
         return ok
 
 

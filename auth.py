@@ -127,6 +127,25 @@ async def get_optional_user(authorization: Optional[str] = Header(None)) -> Opti
         return None
 
 
+async def get_websocket_user(token: Optional[str] = None) -> Optional[TokenData]:
+    """
+    Get user from WebSocket token (from query params or auth message).
+
+    Args:
+        token: JWT token string
+
+    Returns:
+        TokenData if valid token, None if no token or invalid
+    """
+    if not token:
+        return None
+
+    try:
+        return decode_token(token)
+    except HTTPException:
+        return None
+
+
 def create_user(email: str, password: str, full_name: Optional[str] = None) -> User:
     """Create new user."""
     if email in users_db:
