@@ -11,23 +11,24 @@ class Context:
     cv: str = ''
     company: str = ''
     position: str = ''
-    
+    custom_system_prompt: str = ''  # User-customizable system prompt
+
     def to_dict(self) -> dict:
         """Convert to dictionary."""
         return asdict(self)
-    
+
     @classmethod
     def from_dict(cls, data: dict) -> 'Context':
         """Create from dictionary."""
         return cls(**data)
-    
+
     def is_empty(self) -> bool:
         """Check if context is empty."""
-        return not any([self.cv.strip(), self.company.strip(), self.position.strip()])
-    
+        return not any([self.cv.strip(), self.company.strip(), self.position.strip(), self.custom_system_prompt.strip()])
+
     def filled_count(self) -> int:
         """Count filled fields."""
-        return sum(1 for v in [self.cv, self.company, self.position] if v.strip())
+        return sum(1 for v in [self.cv, self.company, self.position, self.custom_system_prompt] if v.strip())
 
 
 @dataclass

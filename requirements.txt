@@ -5,3 +5,14 @@ openai-whisper
 numpy
 pydantic
 python-dotenv
+python-jose[cryptography]
+passlib[bcrypt]
+python-multipart
+sqlalchemy
+psycopg2-binary
+alembic
+asyncpg
+slowapi
+redis
+python-json-logger
+prometheus-client

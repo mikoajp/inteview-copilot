@@ -4,28 +4,40 @@ __pycache__/
 *$py.class
 *.so
 .Python
-venv/
 env/
+venv/
 ENV/
+.venv
 
 # Environment
 .env
 .env.local
+
+# Git
+.git/
+.gitignore
 
 # IDE
 .vscode/
 .idea/
 *.swp
 *.swo
+*~
 
-# Testing
+# Documentation
+*.md
+docs/
+
+# Tests
+tests/
 .pytest_cache/
 .coverage
 htmlcov/
 
 # Data
+*.db
+*.sqlite
 data/
-*.json
 
 # Logs
 *.log
@@ -33,11 +45,3 @@ data/
 # OS
 .DS_Store
 Thumbs.db
-
-# Git
-.git/
-.gitignore
-
-# Documentation
-*.md
-docs/

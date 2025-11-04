@@ -1,472 +1,350 @@
-# 🎯 Interview Copilot - API Backend
+# 🎯 Interview Copilot - Production Ready API
 
-> FastAPI backend with Gemini 2.5 Pro for Interview Copilot Extension
+> **FastAPI backend with Google Gemini 2.0 Flash for AI-powered interview assistance**
 
-## 🌟 Features
+[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.100+-green.svg)](https://fastapi.tiangolo.com/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-- ✅ **Gemini 2.5 Pro Integration** - Powerful AI responses
-- ✅ **Whisper AI Transcription** - Accurate speech-to-text
-- ✅ **REST API** - Standard HTTP endpoints
-- ✅ **WebSocket Support** - Real-time audio streaming
-- ✅ **CORS Enabled** - Works with browser extensions
-- ✅ **Async/Await** - High performance
-- ✅ **Production Ready** - Can be hosted on cloud
+## ✨ Features
 
-## 📋 Requirements
+### Core Functionality
+- 🎤 **Real-time Audio Transcription** - OpenAI Whisper for accurate speech-to-text
+- 🤖 **AI Answer Generation** - Google Gemini 2.0 Flash for intelligent responses
+- 🔍 **Question Detection** - Automatic detection of interview questions (19 markers PL/EN)
+- 📝 **Context Management** - CV, company, and position-aware responses
+- 🎨 **Custom Prompts** - User-customizable system prompts for personalized AI behavior
 
-- Python 3.10+
-- Google Gemini API Key
-- FFmpeg (for Whisper)
+### Production Features
+- 🔐 **JWT Authentication** - Secure user authentication with Bearer tokens
+- 💾 **PostgreSQL Database** - Persistent storage with SQLAlchemy ORM
+- ⏱️ **Rate Limiting** - Protection against abuse (30 req/min default)
+- 📊 **Structured Logging** - JSON logs for easy integration with ELK/Datadog
+- 📈 **Prometheus Metrics** - `/metrics` endpoint for monitoring
+- 🌐 **REST API + WebSocket** - Flexible communication options
+- 🐳 **Docker Ready** - Full containerization support
 
 ## 🚀 Quick Start
 
-### 1. Install Dependencies
+### Prerequisites
+
+- Python 3.10+
+- Google Gemini API Key ([Get one here](https://makersuite.google.com/app/apikey))
+- FFmpeg (for Whisper audio processing)
+
+### Installation
 
 ```bash
-cd api-backend
+# Clone repository
+git clone https://github.com/mikoajp/inteview-copilot
+cd inteview-copilot
+
+# Create virtual environment
 python -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
 
-# Windows
-venv\Scripts\activate
-
-# macOS/Linux
-source venv/bin/activate
-
+# Install dependencies
 pip install -r requirements.txt
+
+# Configure environment
+cp .env.example .env
+# Edit .env and add your GEMINI_API_KEY
 ```
 
-### 2. Configure Environment
-
-Create `.env` file:
-
-```env
-# Required
-GEMINI_API_KEY=your_gemini_api_key_here
-
-# Optional - defaults shown
-GEMINI_MODEL=gemini-2.0-flash-exp
-WHISPER_MODEL=base
-WHISPER_LANGUAGE=pl
-API_HOST=0.0.0.0
-API_PORT=5000
-API_DEBUG=False
-CORS_ORIGINS=*
-```
-
-**Get Gemini API Key:**
-1. Go to https://makersuite.google.com/app/apikey
-2. Create new API key
-3. Copy and paste into `.env`
-
-### 3. Run Server
+### Run Locally
 
 ```bash
-# Development (with auto-reload)
+# Development mode (in-memory storage, no auth)
 python app.py
 
-# Or with uvicorn directly
-uvicorn app:app --reload --host 0.0.0.0 --port 5000
-
-# Production
-uvicorn app:app --host 0.0.0.0 --port 5000 --workers 4
+# Production mode (requires PostgreSQL and auth)
+# Set USE_DATABASE=True and REQUIRE_AUTH=True in .env
+python app.py
 ```
 
-Server will start on: `http://localhost:5000`
+API will be available at: http://localhost:5000
 
-## 📖 API Documentation
+- **Docs**: http://localhost:5000/docs (Swagger UI)
+- **Health**: http://localhost:5000/api/health
+- **Metrics**: http://localhost:5000/metrics
 
-### Interactive Docs
+## 📋 Configuration
 
-Once server is running, visit:
-- **Swagger UI**: http://localhost:5000/docs
-- **ReDoc**: http://localhost:5000/redoc
+All configuration via environment variables. See [.env.example](.env.example) for full list.
 
-### Endpoints
+### Key Configuration Options
 
-#### Health Check
-```http
-GET /api/health
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `GEMINI_API_KEY` | Required | Google Gemini API key |
+| `USE_DATABASE` | False | Enable PostgreSQL (True/False) |
+| `REQUIRE_AUTH` | True | Require JWT authentication |
+| `RATE_LIMIT_ENABLED` | True | Enable rate limiting |
+| `RATE_LIMIT_PER_MINUTE` | 30 | Max requests per minute |
+
+### Development vs Production
+
+**Development:**
+```env
+USE_DATABASE=False
+REQUIRE_AUTH=False
+API_DEBUG=True
 ```
 
-**Response:**
-```json
+**Production:**
+```env
+USE_DATABASE=True
+REQUIRE_AUTH=True
+API_DEBUG=False
+JWT_SECRET_KEY=your-strong-random-secret
+DATABASE_URL=postgresql://user:pass@host:5432/dbname
+```
+
+## 📚 Documentation
+
+- **[Database Setup Guide](DATABASE_SETUP.md)** - PostgreSQL configuration
+- **[Custom Prompts Guide](CUSTOM_PROMPTS.md)** - Customize AI behavior
+- **[API Documentation](http://localhost:5000/docs)** - Interactive Swagger UI
+
+## 🔒 Security
+
+- ✅ JWT Bearer token authentication
+- ✅ bcrypt password hashing
+- ✅ Rate limiting per IP/user
+- ✅ SQL injection protection (SQLAlchemy ORM)
+- ✅ CORS configuration
+- ✅ Input validation (Pydantic)
+
+**Before deploying to production:**
+1. Change `JWT_SECRET_KEY` to a strong random string
+2. Set `REQUIRE_AUTH=True`
+3. Limit `CORS_ORIGINS` to your domain
+4. Enable HTTPS/SSL
+5. Use strong database passwords
+
+## 🐳 Docker Deployment
+
+### Docker Compose (Recommended)
+
+```bash
+# Start all services (app, PostgreSQL, Redis)
+docker-compose up -d
+
+# View logs
+docker-compose logs -f
+
+# Stop services
+docker-compose down
+```
+
+### Standalone Docker
+
+```bash
+# Build image
+docker build -t interview-copilot .
+
+# Run container
+docker run -d \
+  -p 5000:5000 \
+  -e GEMINI_API_KEY=your_key \
+  -e USE_DATABASE=False \
+  interview-copilot
+```
+
+## ☁️ Cloud Deployment
+
+### Railway.app (Easiest)
+
+```bash
+npm install -g @railway/cli
+railway login
+railway init
+railway add postgresql
+railway add redis
+railway variables set GEMINI_API_KEY=xxx
+railway up
+```
+
+### Google Cloud Run
+
+```bash
+gcloud builds submit --tag gcr.io/PROJECT_ID/interview-copilot
+gcloud run deploy interview-copilot \
+  --image gcr.io/PROJECT_ID/interview-copilot \
+  --platform managed \
+  --region us-central1 \
+  --set-env-vars "GEMINI_API_KEY=xxx,..."
+```
+
+See [deployment docs](docs/deployment.md) for more options.
+
+## 🔌 API Endpoints
+
+### Authentication
+
+```bash
+# Register user
+POST /api/auth/register
 {
-  "status": "healthy",
-  "version": "2.0.0",
-  "gemini_model": "gemini-2.0-flash-exp",
-  "whisper_model": "base",
-  "timestamp": "2024-01-15T10:30:00Z"
+  "email": "user@example.com",
+  "password": "securepassword",
+  "full_name": "John Doe"
 }
+
+# Login
+POST /api/auth/login
+{
+  "email": "user@example.com",
+  "password": "securepassword"
+}
+
+# Get current user
+GET /api/auth/me
+Authorization: Bearer <token>
 ```
 
-#### Transcribe Audio
-```http
-POST /api/transcribe
-Content-Type: application/json
+### Core Features
 
+```bash
+# Transcribe audio
+POST /api/transcribe
 {
   "audio": "base64_encoded_audio",
   "language": "pl"
 }
-```
 
-#### Generate Answer
-```http
+# Generate answer
 POST /api/generate
-Content-Type: application/json
-
 {
-  "question": "What is your experience with Python?",
+  "question": "What is your experience?",
   "context": {
-    "cv": "Senior Python Developer...",
+    "cv": "...",
     "company": "Google",
-    "position": "Backend Engineer"
-  },
-  "temperature": 0.7,
-  "max_tokens": 500
+    "position": "Senior Engineer",
+    "custom_system_prompt": "Optional custom prompt"
+  }
 }
-```
 
-#### Process Audio (Full Pipeline)
-```http
+# Process audio (transcribe + detect + generate)
 POST /api/process_audio
-Content-Type: application/json
-
 {
-  "audio": [0.1, 0.2, ...],  // Float32Array
+  "audio": [0.1, 0.2, ...],
   "sampleRate": 16000
 }
-```
 
-**Response:**
-```json
-{
-  "success": true,
-  "question": "What is your experience?",
-  "answer": "I have 5 years of experience...",
-  "timestamp": "2024-01-15T10:30:00Z"
-}
-```
-
-#### Context Management
-```http
-GET /api/context
+# Update context
 POST /api/context
-```
+{
+  "cv": "Your CV content",
+  "company": "Company Name",
+  "position": "Position Title",
+  "custom_system_prompt": "Custom AI instructions"
+}
 
-#### History
-```http
+# Get history
 GET /api/history
 ```
 
 ### WebSocket
 
-Connect to: `ws://localhost:5000/ws/audio`
+```javascript
+const ws = new WebSocket('ws://localhost:5000/ws/audio');
 
-**Message Format:**
+// Send audio
+ws.send(JSON.stringify({
+  type: 'audio',
+  data: audioFloatArray
+}));
 
-Send audio:
-```json
-{
-  "type": "audio",
-  "data": [0.1, 0.2, ...]
-}
+// Receive responses
+ws.onmessage = (event) => {
+  const msg = JSON.parse(event.data);
+  // msg.type: 'transcription', 'question_detected', 'answer'
+};
 ```
 
-Receive transcription:
-```json
-{
-  "type": "transcription",
-  "text": "What is your experience?"
-}
-```
+## 📊 Monitoring
 
-Receive answer:
+### Prometheus Metrics
+
+Available at `/metrics`:
+
+- `http_requests_total` - Total HTTP requests
+- `http_request_duration_seconds` - Request latency
+- `transcriptions_total` - Total transcriptions
+- `generations_total` - Total answer generations
+- `questions_detected_total` - Questions detected
+- `errors_total` - Errors by type
+
+### Structured Logs
+
+JSON formatted logs with context:
+
 ```json
 {
-  "type": "answer",
-  "answer": "I have 5 years..."
+  "@timestamp": "2025-01-15T10:30:00Z",
+  "level": "INFO",
+  "message": "Request completed",
+  "method": "POST",
+  "url": "/api/process_audio",
+  "status_code": 200,
+  "duration": "2.45s"
 }
 ```
 
 ## 🧪 Testing
 
-### Manual Testing
-
 ```bash
-# Health check
-curl http://localhost:5000/api/health
+# Install test dependencies
+pip install pytest pytest-asyncio httpx
 
-# Generate answer
-curl -X POST http://localhost:5000/api/generate \
-  -H "Content-Type: application/json" \
-  -d '{
-    "question": "Why do you want to work here?",
-    "context": {
-      "cv": "Senior Developer with 5 years experience",
-      "company": "TechCorp",
-      "position": "Senior Engineer"
-    }
-  }'
-```
+# Run tests
+pytest
 
-### Python Testing
-
-```python
-import requests
-
-# Test health
-response = requests.get('http://localhost:5000/api/health')
-print(response.json())
-
-# Test generation
-response = requests.post('http://localhost:5000/api/generate', json={
-    "question": "What are your strengths?",
-    "context": {
-        "cv": "Python expert, team lead",
-        "company": "Google",
-        "position": "Tech Lead"
-    }
-})
-print(response.json())
-```
-
-## 🚀 Deployment
-
-### Option 1: Railway (Recommended)
-
-1. Create account at https://railway.app
-2. Connect GitHub repo
-3. Add environment variables (GEMINI_API_KEY, etc.)
-4. Deploy!
-
-**Cost:** ~$5/month
-
-### Option 2: Google Cloud Run
-
-```bash
-# Build container
-docker build -t interview-copilot-api .
-
-# Deploy to Cloud Run
-gcloud run deploy interview-copilot-api \
-  --image interview-copilot-api \
-  --platform managed \
-  --region us-central1 \
-  --allow-unauthenticated \
-  --set-env-vars GEMINI_API_KEY=your_key
-```
-
-### Option 3: VPS (DigitalOcean, Linode)
-
-```bash
-# Install dependencies
-apt update && apt install -y python3.10 python3-pip ffmpeg
-
-# Clone repo
-git clone your-repo
-cd api-backend
-
-# Install
-pip install -r requirements.txt
-
-# Run with supervisor/systemd
-uvicorn app:app --host 0.0.0.0 --port 5000
-```
-
-### Docker
-
-```bash
-# Build
-docker build -t interview-copilot-api .
-
-# Run
-docker run -p 5000:5000 \
-  -e GEMINI_API_KEY=your_key \
-  interview-copilot-api
-```
-
-## 📊 Architecture
-
-```
-┌────────────────────────────────────────┐
-│     Browser Extension (JavaScript)      │
-│  • Audio capture                        │
-│  • WebSocket client                     │
-└───────────────┬────────────────────────┘
-                │ HTTP/WebSocket
-┌───────────────▼────────────────────────┐
-│     FastAPI Backend (Python)           │
-│  • REST endpoints                       │
-│  • WebSocket server                     │
-└───────────────┬────────────────────────┘
-                │
-        ┌───────┴────────┐
-        │                │
-┌───────▼──────┐  ┌─────▼──────┐
-│  Whisper AI  │  │ Gemini 2.5 │
-│ (Local STT)  │  │ (Cloud LLM)│
-└──────────────┘  └────────────┘
-```
-
-## 🔐 Security
-
-### API Key Protection
-
-**DO NOT:**
-- ❌ Commit `.env` to git
-- ❌ Expose API key in frontend
-- ❌ Share API key publicly
-
-**DO:**
-- ✅ Use environment variables
-- ✅ Add `.env` to `.gitignore`
-- ✅ Rotate keys regularly
-- ✅ Use rate limiting in production
-
-### Production Settings
-
-```env
-# Production .env
-API_DEBUG=False
-REQUIRE_API_KEY=True
-CORS_ORIGINS=https://yourdomain.com
-RATE_LIMIT_PER_MINUTE=30
-```
-
-## 🐛 Troubleshooting
-
-### Gemini API Error
-
-**Problem:** `401 Unauthorized`
-
-**Solution:**
-```bash
-# Check API key
-echo $GEMINI_API_KEY
-
-# Test API key
-curl -H "Content-Type: application/json" \
-  -H "x-goog-api-key: YOUR_KEY" \
-  https://generativelanguage.googleapis.com/v1/models
-```
-
-### Whisper Loading Error
-
-**Problem:** `Failed to load Whisper model`
-
-**Solution:**
-```bash
-# Install FFmpeg
-# Ubuntu/Debian
-sudo apt install ffmpeg
-
-# macOS
-brew install ffmpeg
-
-# Windows
-choco install ffmpeg
-```
-
-### CORS Error
-
-**Problem:** Browser blocks requests
-
-**Solution:**
-```env
-# In .env, set specific origins
-CORS_ORIGINS=https://yourextension.com,http://localhost:3000
-```
-
-### Port Already in Use
-
-**Problem:** `Address already in use`
-
-**Solution:**
-```bash
-# Find process using port 5000
-# Linux/macOS
-lsof -i :5000
-
-# Windows
-netstat -ano | findstr :5000
-
-# Kill process or use different port
-API_PORT=5001
+# With coverage
+pytest --cov=. --cov-report=html
 ```
 
 ## 📈 Performance
 
-### Benchmarks (Single Core)
+Typical response times:
+- Transcription (3s audio): 2-5s
+- Answer generation: 1-3s
+- Question detection: <100ms
+- End-to-end: 3-8s
 
-- **Transcription (3s audio):** ~2-5 seconds
-- **Gemini Generation:** ~1-3 seconds
-- **End-to-end:** ~3-8 seconds
+Bottlenecks:
+- Whisper transcription (CPU-bound)
+- Gemini API latency
 
-### Optimization Tips
-
-1. **Use GPU for Whisper:**
-```python
-transcription_engine = TranscriptionEngine(
-    model_name="base",
-    language="pl",
-    fp16=True  # Requires GPU
-)
-```
-
-2. **Use smaller Whisper model:**
-```env
-WHISPER_MODEL=tiny  # Fastest
-```
-
-3. **Increase workers:**
-```bash
-uvicorn app:app --workers 4
-```
-
-4. **Use Redis for caching** (future enhancement)
-
-## 🔄 Migration from LM Studio
-
-If migrating from old backend (LM Studio):
-
-1. **Environment variables changed:**
-```env
-# Old
-LM_STUDIO_HOST=localhost
-LM_STUDIO_PORT=1234
-
-# New
-GEMINI_API_KEY=your_key
-GEMINI_MODEL=gemini-2.0-flash-exp
-```
-
-2. **No local LLM needed** - Gemini is cloud-based
-
-3. **Better performance** - Gemini is faster and more accurate
-
-4. **No setup hassle** - No need to download/run LM Studio
-
-## 📚 Additional Resources
-
-- [Gemini API Documentation](https://ai.google.dev/docs)
-- [FastAPI Documentation](https://fastapi.tiangolo.com/)
-- [Whisper Documentation](https://github.com/openai/whisper)
+Optimizations:
+- Use GPU for Whisper
+- Cache frequently asked questions
+- Redis for rate limit storage
 
 ## 🤝 Contributing
 
 Contributions welcome! Please:
 1. Fork the repository
-2. Create feature branch
-3. Add tests
-4. Submit pull request
+2. Create a feature branch
+3. Make your changes
+4. Submit a pull request
 
 ## 📄 License
 
-MIT License - See parent project for details
+MIT License - see [LICENSE](LICENSE) file
+
+## 🙏 Acknowledgments
+
+- [FastAPI](https://fastapi.tiangolo.com/)
+- [Google Gemini](https://ai.google.dev/)
+- [OpenAI Whisper](https://github.com/openai/whisper)
+
+## 📞 Support
+
+- Issues: [GitHub Issues](https://github.com/mikoajp/inteview-copilot/issues)
+- Documentation: [docs/](docs/)
 
 ---
 
-**Ready to deploy! 🚀**
-
-For questions or issues, check the main project README.
+**Built with ❤️ for better interview preparation**
