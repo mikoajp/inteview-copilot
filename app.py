@@ -119,8 +119,14 @@ async def log_requests(request: Request, call_next):
 
 # Add rate limiter to app state
 if config.rate_limit_enabled:
+    from slowapi.errors import RateLimitExceeded
+    from slowapi.middleware import SlowAPIMiddleware
     limiter = get_limiter()
     app.state.limiter = limiter
+    app.add_middleware(SlowAPIMiddleware)
+    @app.exception_handler(RateLimitExceeded)
+    async def rate_limit_handler(request: Request, exc: RateLimitExceeded):
+        return JSONResponse(status_code=429, content={"detail": "Rate limit exceeded"})
 
 # Global instances (lazy loaded)
 gemini_client: Optional[GeminiClient] = None
@@ -683,7 +689,7 @@ async def stop_session(current_user: User = Depends(get_optional_user)):
 # ============= WebSocket Endpoint =============
 
 @app.websocket("/ws/audio")
-async def websocket_audio_stream(websocket: WebSocket, token: Optional[str] = None):
+async def websocket_audio_stream(websocket: WebSocket):
     """
     WebSocket endpoint for real-time audio streaming.
 
@@ -697,6 +703,7 @@ async def websocket_audio_stream(websocket: WebSocket, token: Optional[str] = No
     initialize_engines()
 
     # Authenticate user from query param token
+    token = websocket.query_params.get("token")
     user = await get_websocket_user(token)
 
     # If auth is required and no valid token, close connection
