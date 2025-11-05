@@ -24,7 +24,7 @@ class Config:
 
     # Database Configuration
     database_url: str = os.getenv("DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/interview_copilot")
-    use_database: bool = os.getenv("USE_DATABASE", "True").lower() == "true"
+    use_database: bool = True  # Always use database in production
 
     # JWT Configuration
     jwt_secret_key: str = os.getenv("JWT_SECRET_KEY", "your-secret-key-change-in-production")
@@ -32,10 +32,10 @@ class Config:
     jwt_access_token_expire_minutes: int = int(os.getenv("JWT_ACCESS_TOKEN_EXPIRE_MINUTES", "1440"))  # 24 hours
 
     # Auth Configuration
-    require_auth: bool = os.getenv("REQUIRE_AUTH", "True").lower() == "true"
+    require_auth: bool = True  # Always require authentication
 
     # Rate Limiting Configuration
-    rate_limit_enabled: bool = os.getenv("RATE_LIMIT_ENABLED", "True").lower() == "true"
+    rate_limit_enabled: bool = True  # Always enable rate limiting
     rate_limit_per_minute: int = int(os.getenv("RATE_LIMIT_PER_MINUTE", "30"))
     rate_limit_storage: str = os.getenv("RATE_LIMIT_STORAGE", "memory")  # memory or redis
     redis_url: str = os.getenv("REDIS_URL", "redis://localhost:6379")
