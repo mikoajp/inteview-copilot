@@ -1,6 +1,6 @@
 """Context management for building prompts."""
 
-from ..models import Context
+from models import Context
 
 
 class ContextManager:

@@ -20,7 +20,7 @@ security = HTTPBearer()
 class TokenData(BaseModel):
     """JWT Token data model."""
     user_id: str
-    email: str
+    email: Optional[str] = None
     exp: Optional[datetime] = None
 
 
@@ -87,9 +87,9 @@ def decode_token(token: str) -> TokenData:
     try:
         payload = jwt.decode(token, config.jwt_secret_key, algorithms=[config.jwt_algorithm])
         user_id: str = payload.get("sub")
-        email: str = payload.get("email")
+        email = payload.get("email")
 
-        if user_id is None or email is None:
+        if user_id is None:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid authentication credentials",
