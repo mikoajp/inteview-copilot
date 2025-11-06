@@ -69,55 +69,64 @@ class GeminiClient:
     ) -> str:
         """
         Generate response using Gemini with native system instruction support (async).
-
-        Args:
-            system_prompt: System context prompt (used as native system_instruction)
-            user_prompt: User question/prompt
-            temperature: Sampling temperature (0.0 to 2.0)
-            max_tokens: Maximum tokens to generate
-
-        Returns:
-            Generated response text
-
-        Raises:
-            Exception: If generation fails
         """
         try:
             print(f"🤖 Generating with Gemini: {self.model_name}")
-
-            # Create model with native system instruction support
             model = genai.GenerativeModel(
                 model_name=self.model_name,
-                system_instruction=system_prompt  # Native system instruction
+                system_instruction=system_prompt
             )
-
-            # Configure generation parameters
             generation_config = genai.types.GenerationConfig(
                 temperature=temperature,
                 max_output_tokens=max_tokens,
-                top_p=0.95,      # Nucleus sampling
-                top_k=40,        # Top-k sampling
+                top_p=0.95,
+                top_k=40,
             )
-
-            # Run sync method in executor to make it async
             loop = asyncio.get_event_loop()
             response = await loop.run_in_executor(
                 None,
                 partial(
                     model.generate_content,
-                    user_prompt,  # Only user prompt (system instruction is separate)
+                    user_prompt,
                     generation_config=generation_config
                 )
             )
-
-            # Extract text from response
             answer = response.text.strip()
             print(f"✅ Response generated ({len(answer)} chars)")
             return answer
-
         except Exception as e:
             error_msg = f"Gemini API Error: {str(e)}"
             print(f"❌ {error_msg}")
-            # Re-raise exception instead of returning error as text
             raise Exception(error_msg) from e
-    
+
+    def stream_response(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        temperature: float = 0.7,
+        max_tokens: int = 500
+    ):
+        """Stream response chunks (generator)."""
+        print(f"🔄 Streaming with Gemini: {self.model_name}")
+        model = genai.GenerativeModel(
+            model_name=self.model_name,
+            system_instruction=system_prompt
+        )
+        generation_config = genai.types.GenerationConfig(
+            temperature=temperature,
+            max_output_tokens=max_tokens,
+            top_p=0.95,
+            top_k=40,
+        )
+        try:
+            responses = model.generate_content(
+                user_prompt,
+                generation_config=generation_config,
+                stream=True
+            )
+            for chunk in responses:
+                if hasattr(chunk, "text") and chunk.text:
+                    yield chunk.text
+        except Exception as e:
+            print(f"❌ Streaming error: {e}")
+            return
