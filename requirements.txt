@@ -19,3 +19,4 @@ prometheus-client
 pytest
 pytest-asyncio
 httpx
+email-validator

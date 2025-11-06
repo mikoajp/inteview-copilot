@@ -766,27 +766,36 @@ async def websocket_audio_stream(websocket: WebSocket):
                             custom_system_prompt=context_data.custom_system_prompt
                         )
 
-                        # Generate answer
+                        # Generate answer (stream chunks)
                         generation_start = time.time()
-                        answer = await gemini_client.generate_response_async(
+                        answer_chunks = []
+                        for chunk in gemini_client.stream_response(
                             system_prompt=system_prompt,
                             user_prompt=text,
                             temperature=0.7,
                             max_tokens=500
-                        )
+                        ):
+                            if chunk.strip():
+                                answer_chunks.append(chunk)
+                                await websocket.send_json({
+                                    "type": "answer_chunk",
+                                    "delta": chunk
+                                })
                         generation_count.inc()
                         generation_duration.observe(time.time() - generation_start)
+                        full_answer = "".join(answer_chunks).strip()
 
-                        if answer:
-                            log_info(f"WebSocket answer generated: {len(answer)} characters", extra={
+                        if full_answer:
+                            log_info(f"WebSocket streamed answer generated: {len(full_answer)} characters", extra={
                                 "user_id": session_id
                             })
-
                             await websocket.send_json({
-                                "type": "answer",
-                                "answer": answer
+                                "type": "answer_final",
+                                "answer": full_answer
                             })
 
+            elif message["type"] == "ping":
+                await websocket.send_json({"type": "pong"})
             elif message["type"] == "context":
                 # Update context
                 context_data = message["data"]
