@@ -21,4 +21,4 @@ COPY . .
 EXPOSE 5000
 
 # Run application
-CMD uvicorn app:app --host 0.0.0.0 --port ${PORT:-5000}
+CMD uvicorn app:app --host 0.0.0.0 --port ${PORT:-5000} --proxy-headers --forwarded-allow-ips='*'
