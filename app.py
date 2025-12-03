@@ -36,15 +36,14 @@ from auth import (
 
 from db_models import User as DBUser
 
-# Database imports (conditional)
-if config.use_database:
-    from database import get_db, init_db, check_db_connection
-    from db_operations import (
-        get_context as get_context_db,
-        update_context as update_context_db,
-        add_history_entry,
-        get_history as get_history_db
-    )
+# Database imports (always enabled)
+from database import get_db, init_db, check_db_connection, SessionLocal
+from db_operations import (
+    get_context as get_context_db,
+    update_context as update_context_db,
+    add_history_entry,
+    get_history as get_history_db
+)
 
 # Initialize FastAPI app
 app = FastAPI(
@@ -64,7 +63,7 @@ app.add_middleware(
 
 # HTTPS enforcement in production (when not in debug mode)
 if not config.api_debug:
-    from fastapi.middleware.trustedhost import TrustedHostMiddleware
+
 
     @app.middleware("http")
     async def enforce_https(request: Request, call_next):
@@ -137,9 +136,6 @@ transcription_engine: Optional[TranscriptionEngine] = None
 question_detector: QuestionDetector = QuestionDetector()
 context_manager: ContextManager = ContextManager()
 
-# In-memory storage (replace with database in production)
-contexts: Dict[str, Context] = {}
-history: Dict[str, list] = {}
 
 
 def initialize_engines():
@@ -232,7 +228,7 @@ async def root():
 
 @app.post("/api/auth/register", response_model=TokenResponse)
 @rate_limit()
-async def register(request: Request, user_data: UserCreate, db: Session = Depends(get_db) if config.use_database else None):
+async def register(request: Request, user_data: UserCreate, db: Session = Depends(get_db)):
     """Register a new user."""
     try:
         log_info(f"User registration attempt: {user_data.email}")
@@ -266,7 +262,7 @@ class LoginRequest(BaseModel):
 
 @app.post("/api/auth/login", response_model=TokenResponse)
 @rate_limit()
-async def login(request: Request, login_data: LoginRequest, db: Session = Depends(get_db) if config.use_database else None):
+async def login(request: Request, login_data: LoginRequest, db: Session = Depends(get_db)):
     """Authenticate user and return JWT token."""
     try:
         log_info(f"Login attempt: {login_data.username}")
@@ -340,12 +336,11 @@ async def health_check(request: Request):
         gemini_ok = gemini_client.check_connection() if gemini_client else False
 
         # Check database connection if enabled
-        if config.use_database:
-            try:
-                db_ok = check_db_connection()
-            except Exception as e:
-                log_warning(f"Database health check failed: {e}")
-                db_ok = False
+        try:
+            db_ok = check_db_connection()
+        except Exception as e:
+            log_warning(f"Database health check failed: {e}")
+            db_ok = False
 
         status = "healthy" if gemini_ok else "degraded"
 
@@ -530,11 +525,8 @@ async def process_audio(
             log_info("Question detected!", extra={"user_id": session_id})
             question_detected_count.inc()
 
-            # Get context from database or in-memory
-            if config.use_database and db:
-                context_data = get_context_db(session_id, db) or Context()
-            else:
-                context_data = contexts.get(session_id, Context())
+            # Get context from database
+            context_data = get_context_db(session_id, db) or Context()
 
             # Build system prompt
             system_prompt = context_manager.build_system_prompt(
@@ -563,16 +555,7 @@ async def process_audio(
 
                 # Save to history
                 timestamp = datetime.utcnow().isoformat()
-                if config.use_database and db:
-                    add_history_entry(session_id, text, answer, db)
-                else:
-                    if session_id not in history:
-                        history[session_id] = []
-                    history[session_id].append({
-                        "question": text,
-                        "answer": answer,
-                        "timestamp": timestamp
-                    })
+                add_history_entry(session_id, text, answer, db)
 
                 return ProcessAudioResponse(
                     success=True,
@@ -612,11 +595,8 @@ async def get_context(
     """Get interview context."""
     session_id = current_user.user_id if current_user else "anonymous"
 
-    # Get context from database or in-memory
-    if config.use_database and db:
-        context_data = get_context_db(session_id, db) or Context()
-    else:
-        context_data = contexts.get(session_id, Context())
+    # Get context from database
+    context_data = get_context_db(session_id, db) or Context()
 
     log_debug(f"Context retrieved", extra={"user_id": session_id})
 
@@ -634,7 +614,7 @@ async def update_context(
     request: Request,
     context_request: ContextRequest,
     current_user: User = Depends(get_optional_user),
-    db: Session = Depends(get_db) if config.use_database else None
+    db: Session = Depends(get_db)
 ):
     """Update interview context."""
     session_id = current_user.user_id if current_user else "anonymous"
@@ -646,11 +626,8 @@ async def update_context(
         custom_system_prompt=context_request.custom_system_prompt or ""
     )
 
-    # Update context in database or in-memory
-    if config.use_database and db:
-        update_context_db(session_id, context_data, db)
-    else:
-        contexts[session_id] = context_data
+    # Update context in database
+    update_context_db(session_id, context_data, db)
 
     log_info(f"Context updated: {context_request.company} - {context_request.position}", extra={
         "user_id": session_id,
@@ -666,16 +643,13 @@ async def update_context(
 async def get_history(
     request: Request,
     current_user: User = Depends(get_optional_user),
-    db: Session = Depends(get_db) if config.use_database else None
+    db: Session = Depends(get_db)
 ):
     """Get interview history."""
     session_id = current_user.user_id if current_user else "anonymous"
 
-    # Get history from database or in-memory
-    if config.use_database and db:
-        history_data = get_history_db(session_id, db)
-    else:
-        history_data = history.get(session_id, [])
+    # Get history from database
+    history_data = get_history_db(session_id, db)
 
     log_debug(f"History retrieved: {len(history_data)} entries", extra={
         "user_id": session_id,
@@ -787,8 +761,10 @@ async def websocket_audio_stream(websocket: WebSocket):
                             "question": text
                         })
 
-                        # Get context
-                        context_data = contexts.get(session_id, Context())
+                        # Get context from DB
+                        db_ws = SessionLocal()
+                        context_data = get_context_db(session_id, db_ws) or Context()
+                        db_ws.close()
                         system_prompt = context_manager.build_system_prompt(
                             cv=context_data.cv,
                             company=context_data.company,
@@ -827,14 +803,16 @@ async def websocket_audio_stream(websocket: WebSocket):
             elif message["type"] == "ping":
                 await websocket.send_json({"type": "pong"})
             elif message["type"] == "context":
-                # Update context
-                context_data = message["data"]
-                contexts[session_id] = Context(
-                    cv=context_data.get("cv", ""),
-                    company=context_data.get("company", ""),
-                    position=context_data.get("position", ""),
-                    custom_system_prompt=context_data.get("custom_system_prompt", "")
-                )
+                # Update context via DB
+                data = message["data"]
+                db_ws = SessionLocal()
+                update_context_db(session_id, Context(
+                    cv=data.get("cv", ""),
+                    company=data.get("company", ""),
+                    position=data.get("position", ""),
+                    custom_system_prompt=data.get("custom_system_prompt", "")
+                ), db_ws)
+                db_ws.close()
 
                 log_info("WebSocket context updated", extra={
                     "user_id": session_id,
@@ -868,7 +846,7 @@ async def startup_event():
     log_info(f"🎤 Whisper Model: {config.whisper_model}")
     log_info(f"🔐 Auth Required: {config.require_auth}")
     log_info(f"🛡️ Rate Limiting: {config.rate_limit_enabled}")
-    log_info(f"💾 Database: {config.use_database}")
+    log_info(f"💾 Database: enabled")
     log_info("=" * 60)
 
     # Validate config
@@ -876,16 +854,15 @@ async def startup_event():
         log_warning("⚠️  WARNING: Configuration validation failed!")
 
     # Initialize database if enabled
-    if config.use_database:
-        try:
-            log_info("Initializing database...")
-            init_db()
-            if check_db_connection():
-                log_info("✅ Database connected successfully")
-            else:
-                log_error("❌ Database connection failed")
-        except Exception as e:
-            log_error(f"❌ Database initialization error: {str(e)}")
+    try:
+        log_info("Initializing database...")
+        init_db()
+        if check_db_connection():
+            log_info("✅ Database connected successfully")
+        else:
+            log_error("❌ Database connection failed")
+    except Exception as e:
+        log_error(f"❌ Database initialization error: {str(e)}")
 
 
 @app.on_event("shutdown")
