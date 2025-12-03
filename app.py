@@ -6,6 +6,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, constr
 from typing import Optional, Dict
 from sqlalchemy.orm import Session
+from sqlalchemy import select
 import numpy as np
 import base64
 import json
@@ -32,6 +33,8 @@ from auth import (
     UserCreate, User, TokenResponse, create_access_token, create_user,
     authenticate_user, get_user_by_id
 )
+
+from db_models import User as DBUser
 
 # Database imports (conditional)
 if config.use_database:
@@ -229,7 +232,7 @@ async def root():
 
 @app.post("/api/auth/register", response_model=TokenResponse)
 @rate_limit()
-async def register(user_data: UserCreate, db: Session = Depends(get_db) if config.use_database else None):
+async def register(request: Request, user_data: UserCreate, db: Session = Depends(get_db) if config.use_database else None):
     """Register a new user."""
     try:
         log_info(f"User registration attempt: {user_data.email}")
@@ -257,25 +260,29 @@ async def register(user_data: UserCreate, db: Session = Depends(get_db) if confi
         raise HTTPException(status_code=500, detail=f"Registration error: {str(e)}")
 
 
+class LoginRequest(BaseModel):
+    username: str  # email
+    password: str
+
 @app.post("/api/auth/login", response_model=TokenResponse)
 @rate_limit()
-async def login(credentials: UserCredentials, db: Session = Depends(get_db) if config.use_database else None):
+async def login(request: Request, login_data: LoginRequest, db: Session = Depends(get_db) if config.use_database else None):
     """Authenticate user and return JWT token."""
     try:
-        log_info(f"Login attempt: {credentials.email}")
+        log_info(f"Login attempt: {login_data.username}")
 
         # Authenticate user
-        user = await authenticate_user(credentials.email, credentials.password, db)
+        user = await authenticate_user(login_data.username, login_data.password, db)
 
         if not user:
-            log_warning(f"Login failed: invalid credentials", extra={"email": credentials.email})
+            log_warning(f"Login failed: invalid credentials", extra={"email": login_data.username})
             error_count.labels(error_type="login_failed", endpoint="/api/auth/login").inc()
             raise HTTPException(status_code=401, detail="Incorrect email or password")
 
         # Create access token
         access_token = create_access_token(data={"sub": user.id})
 
-        log_info(f"Login successful: {credentials.email}")
+        log_info(f"Login successful: {login_data.username}")
         return TokenResponse(
             access_token=access_token,
             token_type="bearer",
@@ -285,17 +292,34 @@ async def login(credentials: UserCredentials, db: Session = Depends(get_db) if c
     except HTTPException:
         raise
     except Exception as e:
-        log_error(f"Login error: {str(e)}", extra={"email": credentials.email})
+        log_error(f"Login error: {str(e)}", extra={"email": login_data.username})
         error_count.labels(error_type="login_error", endpoint="/api/auth/login").inc()
         raise HTTPException(status_code=500, detail=f"Login error: {str(e)}")
 
 
-@app.get("/api/auth/me", response_model=User)
+@app.get("/api/auth/me", response_model=dict)
 @rate_limit()
-async def get_current_user_info(current_user: User = Depends(get_current_user)):
+async def get_current_user_info(
+    request: Request, 
+    current_user: TokenData = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
     """Get current user information."""
-    log_debug(f"User info requested: {current_user.id}")
-    return current_user
+    log_debug(f"User info requested: {current_user.user_id}")
+
+    # Fetch full user from DB (SQLAlchemy 2.0 style)
+    stmt = select(DBUser).where(DBUser.id == current_user.user_id)
+    user = db.execute(stmt).scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    return {
+        "id": user.id,
+        "email": user.email,
+        "full_name": user.full_name,
+        "is_active": user.is_active,
+        "created_at": user.created_at
+    }
 
 
 # ============= Metrics Endpoint =============
@@ -308,7 +332,7 @@ async def metrics():
 
 @app.get("/api/health", response_model=HealthResponse)
 @rate_limit("100/minute")
-async def health_check():
+async def health_check(request: Request):
     """Health check endpoint."""
     # Initialize engines to check if they work
     try:
@@ -348,7 +372,8 @@ async def health_check():
 @app.post("/api/transcribe", response_model=TranscribeResponse)
 @rate_limit()
 async def transcribe_audio(
-    request: TranscribeRequest,
+    request: Request,
+    transcribe_request: TranscribeRequest,
     current_user: User = Depends(get_optional_user)
 ):
     """Transcribe audio to text."""
@@ -358,12 +383,12 @@ async def transcribe_audio(
 
     try:
         log_info(f"Transcription request received", extra={
-            "user_id": current_user.id if current_user else "anonymous",
-            "language": request.language
+            "user_id": current_user.user_id if current_user else "anonymous",
+            "language": transcribe_request.language
         })
 
         # Decode base64 audio
-        audio_bytes = base64.b64decode(request.audio)
+        audio_bytes = base64.b64decode(transcribe_request.audio)
         audio_array = np.frombuffer(audio_bytes, dtype=np.float32)
 
         # Transcribe
@@ -382,7 +407,7 @@ async def transcribe_audio(
 
         return TranscribeResponse(
             text=text,
-            language=request.language,
+            language=transcribe_request.language,
             timestamp=datetime.utcnow().isoformat()
         )
 
@@ -397,7 +422,8 @@ async def transcribe_audio(
 @app.post("/api/generate", response_model=GenerateResponse)
 @rate_limit()
 async def generate_answer(
-    request: GenerateRequest,
+    request: Request,
+    generate_request: GenerateRequest,
     current_user: User = Depends(get_optional_user)
 ):
     """Generate answer for a question."""
@@ -407,24 +433,24 @@ async def generate_answer(
 
     try:
         log_info(f"Generation request received", extra={
-            "user_id": current_user.id if current_user else "anonymous",
-            "question_length": len(request.question)
+            "user_id": current_user.user_id if current_user else "anonymous",
+            "question_length": len(generate_request.question)
         })
 
         # Build system prompt
         system_prompt = context_manager.build_system_prompt(
-            cv=request.context.get("cv", ""),
-            company=request.context.get("company", ""),
-            position=request.context.get("position", ""),
-            custom_system_prompt=request.context.get("custom_system_prompt", "")
+            cv=generate_request.context.get("cv", ""),
+            company=generate_request.context.get("company", ""),
+            position=generate_request.context.get("position", ""),
+            custom_system_prompt=generate_request.context.get("custom_system_prompt", "")
         )
 
         # Generate response
         answer = await gemini_client.generate_response_async(
             system_prompt=system_prompt,
-            user_prompt=request.question,
-            temperature=request.temperature,
-            max_tokens=request.max_tokens
+            user_prompt=generate_request.question,
+            temperature=generate_request.temperature,
+            max_tokens=generate_request.max_tokens
         )
 
         if not answer:
@@ -454,7 +480,8 @@ async def generate_answer(
 @app.post("/api/process_audio", response_model=ProcessAudioResponse)
 @rate_limit()
 async def process_audio(
-    request: ProcessAudioRequest,
+    request: Request,
+    audio_request: ProcessAudioRequest,
     current_user: User = Depends(get_optional_user),
     db: Session = Depends(get_db) if config.use_database else None
 ):
@@ -462,11 +489,11 @@ async def process_audio(
     initialize_engines()
 
     start_time = time.time()
-    session_id = current_user.id if current_user else "anonymous"
+    session_id = current_user.user_id if current_user else "anonymous"
 
     try:
         # Convert list to numpy array
-        audio_array = np.array(request.audio, dtype=np.float32)
+        audio_array = np.array(audio_request.audio, dtype=np.float32)
 
         # Normalize if needed
         if audio_array.max() > 1.0:
@@ -578,11 +605,12 @@ async def process_audio(
 @app.get("/api/context", response_model=ContextResponse)
 @rate_limit()
 async def get_context(
+    request: Request,
     current_user: User = Depends(get_optional_user),
     db: Session = Depends(get_db) if config.use_database else None
 ):
     """Get interview context."""
-    session_id = current_user.id if current_user else "anonymous"
+    session_id = current_user.user_id if current_user else "anonymous"
 
     # Get context from database or in-memory
     if config.use_database and db:
@@ -603,18 +631,19 @@ async def get_context(
 @app.post("/api/context", response_model=dict)
 @rate_limit()
 async def update_context(
-    request: ContextRequest,
+    request: Request,
+    context_request: ContextRequest,
     current_user: User = Depends(get_optional_user),
     db: Session = Depends(get_db) if config.use_database else None
 ):
     """Update interview context."""
-    session_id = current_user.id if current_user else "anonymous"
+    session_id = current_user.user_id if current_user else "anonymous"
 
     context_data = Context(
-        cv=request.cv,
-        company=request.company,
-        position=request.position,
-        custom_system_prompt=request.custom_system_prompt or ""
+        cv=context_request.cv,
+        company=context_request.company,
+        position=context_request.position,
+        custom_system_prompt=context_request.custom_system_prompt or ""
     )
 
     # Update context in database or in-memory
@@ -623,10 +652,10 @@ async def update_context(
     else:
         contexts[session_id] = context_data
 
-    log_info(f"Context updated: {request.company} - {request.position}", extra={
+    log_info(f"Context updated: {context_request.company} - {context_request.position}", extra={
         "user_id": session_id,
-        "company": request.company,
-        "position": request.position
+        "company": context_request.company,
+        "position": context_request.position
     })
 
     return {"success": True, "message": "Context updated"}
@@ -635,11 +664,12 @@ async def update_context(
 @app.get("/api/history", response_model=dict)
 @rate_limit()
 async def get_history(
+    request: Request,
     current_user: User = Depends(get_optional_user),
     db: Session = Depends(get_db) if config.use_database else None
 ):
     """Get interview history."""
-    session_id = current_user.id if current_user else "anonymous"
+    session_id = current_user.user_id if current_user else "anonymous"
 
     # Get history from database or in-memory
     if config.use_database and db:
@@ -660,11 +690,11 @@ async def get_history(
 
 @app.post("/api/start", response_model=dict)
 @rate_limit()
-async def start_session(current_user: User = Depends(get_optional_user)):
+async def start_session(request: Request, current_user: User = Depends(get_optional_user)):
     """Start interview session."""
     initialize_engines()
 
-    session_id = current_user.id if current_user else "anonymous"
+    session_id = current_user.user_id if current_user else "anonymous"
     log_info(f"Session started", extra={"user_id": session_id})
 
     return {
@@ -675,9 +705,9 @@ async def start_session(current_user: User = Depends(get_optional_user)):
 
 @app.post("/api/stop", response_model=dict)
 @rate_limit()
-async def stop_session(current_user: User = Depends(get_optional_user)):
+async def stop_session(request: Request, current_user: User = Depends(get_optional_user)):
     """Stop interview session."""
-    session_id = current_user.id if current_user else "anonymous"
+    session_id = current_user.user_id if current_user else "anonymous"
     log_info(f"Session stopped", extra={"user_id": session_id})
 
     return {
