@@ -80,7 +80,7 @@ class Config:
                 ok = False
 
         # Validate database URL in production
-        if self.use_database and not self.api_debug:
+        if not self.api_debug:
             if "localhost" in self.database_url or "127.0.0.1" in self.database_url:
                 print("⚠️  WARNING: DATABASE_URL points to localhost in production mode")
 
