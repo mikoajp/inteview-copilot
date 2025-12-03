@@ -24,7 +24,7 @@ class Config:
 
     # Database Configuration
     database_url: str = os.getenv("DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/interview_copilot")
-    use_database: bool = False  # Deprecated flag; database is always used
+
 
     # JWT Configuration
     jwt_secret_key: str = os.getenv("JWT_SECRET_KEY", "your-secret-key-change-in-production")
