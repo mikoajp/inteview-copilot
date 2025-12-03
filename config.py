@@ -24,7 +24,7 @@ class Config:
 
     # Database Configuration
     database_url: str = os.getenv("DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/interview_copilot")
-    use_database: bool = False  # Deprecated flag; database is always used
+
 
     # JWT Configuration
     jwt_secret_key: str = os.getenv("JWT_SECRET_KEY", "your-secret-key-change-in-production")
@@ -80,7 +80,7 @@ class Config:
                 ok = False
 
         # Validate database URL in production
-        if self.use_database and not self.api_debug:
+        if not self.api_debug:
             if "localhost" in self.database_url or "127.0.0.1" in self.database_url:
                 print("⚠️  WARNING: DATABASE_URL points to localhost in production mode")
 

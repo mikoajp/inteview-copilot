@@ -217,7 +217,7 @@ class HealthResponse(BaseModel):
 async def root():
     """Root endpoint."""
     return {
-        "message": "Interview Copilot API",
+        "message": "API",
         "version": "2.0.0",
         "docs": "/docs",
         "health": "/api/health"
@@ -257,7 +257,7 @@ async def register(request: Request, user_data: UserCreate, db: Session = Depend
 
 
 class LoginRequest(BaseModel):
-    username: str  # email
+    email: EmailStr
     password: str
 
 @app.post("/api/auth/login", response_model=TokenResponse)
@@ -369,7 +369,7 @@ async def health_check(request: Request):
 async def transcribe_audio(
     request: Request,
     transcribe_request: TranscribeRequest,
-    current_user: User = Depends(get_optional_user)
+    current_user: Optional[TokenData] = Depends(get_optional_user)
 ):
     """Transcribe audio to text."""
     initialize_engines()
@@ -419,7 +419,7 @@ async def transcribe_audio(
 async def generate_answer(
     request: Request,
     generate_request: GenerateRequest,
-    current_user: User = Depends(get_optional_user)
+    current_user: Optional[TokenData] = Depends(get_optional_user)
 ):
     """Generate answer for a question."""
     initialize_engines()
@@ -477,8 +477,8 @@ async def generate_answer(
 async def process_audio(
     request: Request,
     audio_request: ProcessAudioRequest,
-    current_user: User = Depends(get_optional_user),
-    db: Session = Depends(get_db) if config.use_database else None
+    current_user: Optional[TokenData] = Depends(get_optional_user),
+    db: Session = Depends(get_db)
 ):
     """Process audio: transcribe + detect question + generate answer."""
     initialize_engines()
@@ -589,8 +589,8 @@ async def process_audio(
 @rate_limit()
 async def get_context(
     request: Request,
-    current_user: User = Depends(get_optional_user),
-    db: Session = Depends(get_db) if config.use_database else None
+    current_user: Optional[TokenData] = Depends(get_optional_user),
+    db: Session = Depends(get_db)
 ):
     """Get interview context."""
     session_id = current_user.user_id if current_user else "anonymous"
@@ -613,7 +613,7 @@ async def get_context(
 async def update_context(
     request: Request,
     context_request: ContextRequest,
-    current_user: User = Depends(get_optional_user),
+    current_user: Optional[TokenData] = Depends(get_optional_user),
     db: Session = Depends(get_db)
 ):
     """Update interview context."""
@@ -642,7 +642,7 @@ async def update_context(
 @rate_limit()
 async def get_history(
     request: Request,
-    current_user: User = Depends(get_optional_user),
+    current_user: Optional[TokenData] = Depends(get_optional_user),
     db: Session = Depends(get_db)
 ):
     """Get interview history."""
@@ -664,7 +664,7 @@ async def get_history(
 
 @app.post("/api/start", response_model=dict)
 @rate_limit()
-async def start_session(request: Request, current_user: User = Depends(get_optional_user)):
+async def start_session(request: Request, current_user: Optional[TokenData] = Depends(get_optional_user)):
     """Start interview session."""
     initialize_engines()
 
@@ -679,7 +679,7 @@ async def start_session(request: Request, current_user: User = Depends(get_optio
 
 @app.post("/api/stop", response_model=dict)
 @rate_limit()
-async def stop_session(request: Request, current_user: User = Depends(get_optional_user)):
+async def stop_session(request: Request, current_user: Optional[TokenData] = Depends(get_optional_user)):
     """Stop interview session."""
     session_id = current_user.user_id if current_user else "anonymous"
     log_info(f"Session stopped", extra={"user_id": session_id})
@@ -839,14 +839,14 @@ async def websocket_audio_stream(websocket: WebSocket):
 async def startup_event():
     """Run on application startup."""
     log_info("=" * 60)
-    log_info("🎯 INTERVIEW COPILOT API SERVER")
+    log_info("API SERVER STARTED")
     log_info("=" * 60)
-    log_info(f"📍 Version: 2.0.0")
-    log_info(f"🤖 Gemini Model: {config.gemini_model}")
-    log_info(f"🎤 Whisper Model: {config.whisper_model}")
-    log_info(f"🔐 Auth Required: {config.require_auth}")
-    log_info(f"🛡️ Rate Limiting: {config.rate_limit_enabled}")
-    log_info(f"💾 Database: enabled")
+    log_info(f"Version: 2.0.0")
+    log_info(f"Gemini Model: {config.gemini_model}")
+    log_info(f"Whisper Model: {config.whisper_model}")
+    log_info(f"Auth Required: {config.require_auth}")
+    log_info(f"Rate Limiting: {config.rate_limit_enabled}")
+    log_info(f"Database: enabled")
     log_info("=" * 60)
 
     # Validate config
@@ -868,7 +868,7 @@ async def startup_event():
 @app.on_event("shutdown")
 async def shutdown_event():
     """Run on application shutdown."""
-    log_info("👋 Shutting down Interview Copilot API...")
+    log_info("Shutting down API...")
 
 
 if __name__ == "__main__":

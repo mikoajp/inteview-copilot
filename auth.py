@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 from config import config
 
 # Password hashing
-pwd_context = CryptContext(schemes=["argon2"], deprecated="auto")
+pwd_context = CryptContext(schemes=["argon2", "bcrypt"], deprecated="auto")
 
 # Bearer token security
 security = HTTPBearer()
